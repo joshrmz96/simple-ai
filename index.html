@@ -813,10 +813,7 @@
 
             // Decode Base64 to Uint8Array
             const binaryString = atob(audioData);
-            const pcmData = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                pcmData[i] = binaryString.charCodeAt(i);
-            }
+            const pcmData = Uint8Array.from(binaryString, c => c.charCodeAt(0));
 
             // Convert PCM to WAV
             const wavBuffer = convertL16ToWav_(pcmData);
