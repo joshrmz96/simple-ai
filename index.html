@@ -112,6 +112,7 @@
                 <div id="menu-trophies-list" class="grid grid-cols-4 gap-2"></div>
             </div>
             <div class="p-4 border-t border-slate-100">
+                <button onclick="openSettingsFromMenu()" class="w-full py-3 text-indigo-600 font-bold bg-indigo-50 rounded-xl active:bg-indigo-100 mb-2 flex items-center justify-center gap-2">⚙️ Configuración API</button>
                 <button id="reset-user-btn" class="w-full py-3 text-red-500 font-bold bg-red-50 rounded-xl active:bg-red-100" onclick="playClickSound()">Cerrar Sesión</button>
             </div>
         </div>
@@ -121,7 +122,7 @@
     <div id="app-container" class="max-w-6xl mx-auto p-4 md:p-8 opacity-0 transition-opacity duration-500 relative z-10" style="display:none;">
         <nav class="px-4 py-3 shadow-sm fixed top-0 left-0 right-0 max-w-6xl mx-auto" style="max-width: 100%; backdrop-filter: none; background: #f0f9ff;">
              <div class="max-w-6xl mx-auto flex items-center justify-between">
-                <button id="menu-btn" class="flex items-center gap-3 active:scale-95 transition cursor-pointer" onclick="playClickSound()">
+                <button id="menu-btn" class="flex items-center gap-3 active:scale-95 transition cursor-pointer" onclick="document.getElementById('side-menu-overlay').classList.add('open'); playClickSound()">
                     <div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-500/20 text-white font-bold transform -rotate-3 border-2 border-white">M</div>
                     <div class="text-left">
                         <h1 id="app-title-display" class="text-xl font-bold text-slate-800 leading-tight fun-font" data-i18n="appTitle">Mundo [NAME]</h1>
@@ -132,7 +133,6 @@
                     </div>
                 </button>
                 <div class="flex gap-3 items-center">
-                    <button id="settings-btn" class="settings-btn" onclick="openSettingsModal(); playClickSound()" title="API Settings">⚙️</button>
                     <button id="music-btn" class="text-xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="toggleMusic()">🎵</button>
                     <button id="home-btn" class="text-2xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="playClickSound()">🏠</button>
                     <button id="lang-toggle" class="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 active:scale-95 cursor-pointer relative z-30" onclick="playClickSound()">
@@ -324,8 +324,8 @@
             <p class="text-sm font-bold text-slate-800 truncate" id="player-status" data-i18n="loadingVoice">Cargando voz...</p>
         </div>
         <div class="flex items-center gap-3">
-            <button id="player-play-pause" class="w-12 h-12 rounded-full bg-slate-900 text-white font-bold text-xl active:bg-slate-700 shadow-md transition-all flex items-center justify-center cursor-pointer" onclick="playClickSound()">⏸</button>
-            <button id="player-close" class="w-10 h-10 rounded-full bg-slate-100 text-slate-400 active:bg-red-100 active:text-red-500 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer" onclick="playClickSound()">✕</button>
+            <button id="player-play-pause" class="w-12 h-12 rounded-full bg-slate-900 text-white font-bold text-xl active:bg-slate-700 shadow-md transition-all flex items-center justify-center cursor-pointer" onclick="togglePlayerPlayPause(); playClickSound()">⏸</button>
+            <button id="player-close" class="w-10 h-10 rounded-full bg-slate-100 text-slate-400 active:bg-red-100 active:text-red-500 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer" onclick="closePlayer(); playClickSound()">✕</button>
         </div>
     </div>
 
@@ -682,6 +682,12 @@
                     utterance.voice = femaleVoice;
                 }
                 
+                // Hide player when TTS ends
+                utterance.onend = () => {
+                    const player = document.getElementById('sticky-audio-player');
+                    if (player) player.classList.remove('visible');
+                };
+                
                 speechSynthesis.speak(utterance);
                 return true;
             }
@@ -693,6 +699,12 @@
             if (!text || text.trim() === '') return;
             
             const language = state.lang || 'es';
+            const player = document.getElementById('sticky-audio-player');
+            
+            // Show the player
+            if (player) {
+                player.classList.add('visible');
+            }
             
             try {
                 const result = await generateVoice(text, language);
@@ -713,11 +725,29 @@
             }
         }
 
+        // Track current audio element for player controls
+        let currentAudio = null;
+
         // Helper to play audio from URL
         function playAudioFromUrl(url) {
+            // Stop any currently playing audio
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio = null;
+            }
+            
             const audio = new Audio(url);
+            currentAudio = audio; // Track current audio element
+            
+            audio.onended = () => {
+                // Hide player when audio ends
+                const player = document.getElementById('sticky-audio-player');
+                if (player) player.classList.remove('visible');
+                currentAudio = null;
+            };
             audio.play().catch(err => {
                 console.log('Audio playback failed:', err);
+                currentAudio = null;
                 // Fallback to browser TTS on playback error
                 if (state.currentText) {
                     speakWithBrowserTTS(state.currentText, state.lang);
@@ -733,9 +763,69 @@
             }
         }
 
+        // Player control functions
+        function togglePlayerPlayPause() {
+            const playPauseBtn = document.getElementById('player-play-pause');
+            
+            // Handle HTML5 Audio
+            if (currentAudio) {
+                if (currentAudio.paused) {
+                    currentAudio.play();
+                    playPauseBtn.textContent = '⏸';
+                } else {
+                    currentAudio.pause();
+                    playPauseBtn.textContent = '▶';
+                }
+                return;
+            }
+            
+            // Handle speechSynthesis
+            if ('speechSynthesis' in window) {
+                if (speechSynthesis.paused) {
+                    speechSynthesis.resume();
+                    playPauseBtn.textContent = '⏸';
+                } else if (speechSynthesis.speaking) {
+                    speechSynthesis.pause();
+                    playPauseBtn.textContent = '▶';
+                }
+            }
+        }
+
+        function closePlayer() {
+            // Stop HTML5 Audio
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.currentTime = 0;
+                currentAudio = null;
+            }
+            
+            // Stop all speech synthesis
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+            }
+            
+            // Hide the player
+            const player = document.getElementById('sticky-audio-player');
+            if (player) {
+                player.classList.remove('visible');
+            }
+        }
+
+        // Expose player functions globally
+        window.togglePlayerPlayPause = togglePlayerPlayPause;
+        window.closePlayer = closePlayer;
+
         // =====================================================
         // SETTINGS MODAL FOR API KEYS
         // =====================================================
+
+        // Opens settings modal from the side menu
+        function openSettingsFromMenu() {
+            document.getElementById('side-menu-overlay').classList.remove('open');
+            openSettingsModal();
+            playClickSound();
+        }
+        window.openSettingsFromMenu = openSettingsFromMenu;
 
         function saveApiKeys(openai, gemini, grok, murf) {
             if (openai) localStorage.setItem('openai_api_key', openai);
