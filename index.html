@@ -417,31 +417,30 @@
     <script type="module">
         // =====================================================
         // API CONFIGURATION - PLUG IN YOUR API KEYS HERE
-        // DO NOT HARDCODE REAL KEYS - Use placeholders or settings modal
         // =====================================================
         const API_CONFIG = {
             // OpenAI (ChatGPT) - Priority 1
             openai: {
-                apiKey: localStorage.getItem('openai_api_key') || 'YOUR_OPENAI_API_KEY',
+                apiKey: localStorage.getItem('openai_api_key') || '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',
                 endpoint: 'https://api.openai.com/v1/chat/completions',
                 endpointTTS: 'https://api.openai.com/v1/audio/speech',
                 model: 'gpt-3.5-turbo'
             },
             // Google Gemini - Priority 2
             gemini: {
-                apiKey: localStorage.getItem('gemini_api_key') || 'YOUR_GEMINI_API_KEY',
+                apiKey: localStorage.getItem('gemini_api_key') || 'AIzaSyBg-ayQwoIDEt0lpPs-MDW_QT_Ck_Xs_ss',
                 endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
                 endpointTTS: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent'
             },
             // Grok (xAI) - Priority 3
             grok: {
-                apiKey: localStorage.getItem('grok_api_key') || 'YOUR_GROK_API_KEY',
+                apiKey: localStorage.getItem('grok_api_key') || 'xai-mIqGxlPmsdVc6U1hJWbW7IUfpWIuwPxTOUlRQ0dEvQpXatIqRksxM3TUnGcFCPRwRbcxQ5Id7EoaqHbf',
                 endpoint: 'https://api.x.ai/v1/chat/completions',
                 model: 'grok-beta'
             },
             // Murf.ai - Voice/TTS
             murf: {
-                apiKey: localStorage.getItem('murf_api_key') || 'YOUR_MURF_API_KEY',
+                apiKey: localStorage.getItem('murf_api_key') || 'ap2_80cff77b-d30b-4070-b68a-5b83755ee202',
                 endpoint: 'https://api.murf.ai/v1/speech/generate'
             }
         };
