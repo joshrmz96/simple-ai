@@ -361,6 +361,379 @@
         
         const robiIconUrl = "https://image.pollinations.ai/prompt/cute%203d%20avatar%20young%20female%20teacher%20low%20ponytail%20black%20hair%20black%20glasses%20friendly%20icon%20soft%20lighting?width=150&height=150&nologo=true";
 
+        // ============================================
+        // API CONFIGURATION WITH FALLBACK LOGIC
+        // Priority: OpenAI -> Google Gemini -> xAI Grok
+        // Voice: OpenAI TTS -> Murf
+        // ============================================
+        const API_CONFIG = {
+            openai: {
+                key: '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',
+                textEndpoint: 'https://api.openai.com/v1/chat/completions',
+                imageEndpoint: 'https://api.openai.com/v1/images/generations',
+                voiceEndpoint: 'https://api.openai.com/v1/audio/speech',
+                model: 'gpt-4o-mini',
+                imageModel: 'dall-e-3',
+                voiceModel: 'tts-1',
+                voiceName: 'nova' // Female voice
+            },
+            gemini: {
+                key: 'AIzaSyBg-ayQwoIDEt0lpPs-MDW_QT_Ck_Xs_ss',
+                textEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
+                model: 'gemini-1.5-flash'
+            },
+            grok: {
+                key: 'xai-mIqGxlPmsdVc6U1hJWbW7IUfpWIuwPxTOUlRQ0dEvQpXatIqRksxM3TUnGcFCPRwRbcxQ5Id7EoaqHbf',
+                textEndpoint: 'https://api.x.ai/v1/chat/completions',
+                model: 'grok-beta'
+            },
+            murf: {
+                key: 'ap2_80cff77b-d30b-4070-b68a-5b83755ee202',
+                endpoint: 'https://api.murf.ai/v1/speech/generate',
+                voices: {
+                    es: 'es-MX-DaliaNeural', // Spanish (Mexico) Female
+                    en: 'en-US-JennyNeural'  // English (US) Female
+                }
+            }
+        };
+
+        // Voice settings
+        const VOICE_SETTINGS = {
+            gender: 'female',
+            languages: {
+                es: { code: 'es-MX', name: 'Spanish (Mexico)' },
+                en: { code: 'en-US', name: 'English (United States)' }
+            }
+        };
+
+        // ============================================
+        // TEXT GENERATION WITH FALLBACK
+        // OpenAI -> Gemini -> Grok
+        // ============================================
+        async function generateText(prompt, lang = 'es') {
+            const systemPrompt = lang === 'es' 
+                ? 'Eres un tutor educativo amigable para niños. Responde siempre en español de México de forma clara y divertida.'
+                : 'You are a friendly educational tutor for children. Always respond in American English clearly and in a fun way.';
+
+            // Try OpenAI first
+            try {
+                const response = await fetch(API_CONFIG.openai.textEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: API_CONFIG.openai.model,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 1024,
+                        temperature: 0.7
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return { success: true, text: data.choices[0].message.content, provider: 'openai' };
+                }
+            } catch (e) {
+                console.log('OpenAI text failed, trying Gemini...');
+            }
+
+            // Fallback to Gemini
+            try {
+                const response = await fetch(`${API_CONFIG.gemini.textEndpoint}?key=${API_CONFIG.gemini.key}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: `${systemPrompt}\n\n${prompt}` }]
+                        }],
+                        generationConfig: {
+                            maxOutputTokens: 1024,
+                            temperature: 0.7
+                        }
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                    return { success: true, text, provider: 'gemini' };
+                }
+            } catch (e) {
+                console.log('Gemini text failed, trying Grok...');
+            }
+
+            // Fallback to Grok
+            try {
+                const response = await fetch(API_CONFIG.grok.textEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.grok.key}`
+                    },
+                    body: JSON.stringify({
+                        model: API_CONFIG.grok.model,
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 1024,
+                        temperature: 0.7
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return { success: true, text: data.choices[0].message.content, provider: 'grok' };
+                }
+            } catch (e) {
+                console.log('Grok text failed');
+            }
+
+            // All providers failed - return graceful fallback
+            return { 
+                success: false, 
+                text: lang === 'es' 
+                    ? 'Lo siento, no puedo generar contenido en este momento. Por favor, intenta de nuevo más tarde.' 
+                    : 'Sorry, I cannot generate content right now. Please try again later.',
+                provider: 'fallback' 
+            };
+        }
+
+        // ============================================
+        // IMAGE GENERATION WITH FALLBACK
+        // OpenAI DALL-E -> Pollinations (free)
+        // ============================================
+        async function generateImage(prompt, lang = 'es') {
+            const enhancedPrompt = lang === 'es'
+                ? `Ilustración educativa colorida para niños: ${prompt}`
+                : `Colorful educational illustration for children: ${prompt}`;
+
+            // Try OpenAI DALL-E first
+            try {
+                const response = await fetch(API_CONFIG.openai.imageEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: API_CONFIG.openai.imageModel,
+                        prompt: enhancedPrompt,
+                        n: 1,
+                        size: '1024x1024',
+                        quality: 'standard'
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    return { success: true, url: data.data[0].url, provider: 'openai' };
+                }
+            } catch (e) {
+                console.log('OpenAI image failed, trying Pollinations...');
+            }
+
+            // Fallback to Pollinations (free, always available)
+            try {
+                const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}?width=600&height=400&nologo=true`;
+                return { success: true, url: pollinationsUrl, provider: 'pollinations' };
+            } catch (e) {
+                console.log('Pollinations image failed');
+            }
+
+            // Return placeholder
+            return { 
+                success: false, 
+                url: 'https://via.placeholder.com/600x400?text=Imagen+no+disponible',
+                provider: 'fallback' 
+            };
+        }
+
+        // ============================================
+        // VOICE GENERATION WITH FALLBACK
+        // OpenAI TTS -> Murf -> Browser Speech Synthesis
+        // Female voice, Spanish (Mexico) / English (US)
+        // ============================================
+        async function generateVoice(text, lang = 'es') {
+            const cleanText = stripEmojis(text);
+            if (!cleanText || cleanText.length === 0) {
+                return { success: false, audioUrl: null, provider: 'none' };
+            }
+
+            // Try OpenAI TTS first (Female voice)
+            try {
+                const response = await fetch(API_CONFIG.openai.voiceEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: API_CONFIG.openai.voiceModel,
+                        input: cleanText,
+                        voice: API_CONFIG.openai.voiceName, // 'nova' - Female voice
+                        response_format: 'mp3'
+                    })
+                });
+                if (response.ok) {
+                    const audioBlob = await response.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    return { success: true, audioUrl, provider: 'openai' };
+                }
+            } catch (e) {
+                console.log('OpenAI TTS failed, trying Murf...');
+            }
+
+            // Fallback to Murf
+            try {
+                const voiceId = API_CONFIG.murf.voices[lang] || API_CONFIG.murf.voices.es;
+                const response = await fetch(API_CONFIG.murf.endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': API_CONFIG.murf.key
+                    },
+                    body: JSON.stringify({
+                        text: cleanText,
+                        voiceId: voiceId,
+                        style: 'conversational',
+                        format: 'mp3'
+                    })
+                });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.audioFile) {
+                        return { success: true, audioUrl: data.audioFile, provider: 'murf' };
+                    }
+                }
+            } catch (e) {
+                console.log('Murf TTS failed, using browser speech...');
+            }
+
+            // Fallback to browser Speech Synthesis
+            try {
+                const langCode = lang === 'es' ? 'es-MX' : 'en-US';
+                return { 
+                    success: true, 
+                    audioUrl: null, 
+                    useBrowserSpeech: true, 
+                    text: cleanText, 
+                    lang: langCode,
+                    provider: 'browser' 
+                };
+            } catch (e) {
+                console.log('Browser speech failed');
+            }
+
+            return { success: false, audioUrl: null, provider: 'none' };
+        }
+
+        // ============================================
+        // UNIFIED SPEAK FUNCTION WITH FALLBACK
+        // ============================================
+        async function speak(text) {
+            const lang = state.lang || 'es';
+            updatePlayerStatus(i18n[lang].loadingVoice);
+            showAudioPlayer();
+
+            try {
+                const result = await generateVoice(text, lang);
+                
+                if (result.useBrowserSpeech) {
+                    // Use browser's built-in speech synthesis
+                    useBrowserSpeech(result.text, result.lang);
+                    updatePlayerStatus(i18n[lang].voiceBasic);
+                } else if (result.audioUrl) {
+                    // Play the audio from URL
+                    playAudioFromUrl(result.audioUrl);
+                    updatePlayerStatus(lang === 'es' ? 'Reproduciendo...' : 'Playing...');
+                } else {
+                    // All failed - use browser speech as last resort
+                    const langCode = lang === 'es' ? 'es-MX' : 'en-US';
+                    useBrowserSpeech(stripEmojis(text), langCode);
+                    updatePlayerStatus(i18n[lang].voiceBasic);
+                }
+            } catch (e) {
+                console.log('Speech error:', e);
+                // Graceful fallback - don't show error to user
+                const langCode = lang === 'es' ? 'es-MX' : 'en-US';
+                useBrowserSpeech(stripEmojis(text), langCode);
+                updatePlayerStatus(i18n[lang].voiceBasic);
+            }
+        }
+
+        // Browser speech synthesis helper
+        function useBrowserSpeech(text, langCode) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = langCode;
+                utterance.rate = 0.9;
+                utterance.pitch = 1.1; // Slightly higher for female voice effect
+                
+                // Try to find a female voice
+                const voices = window.speechSynthesis.getVoices();
+                const femaleVoice = voices.find(v => 
+                    v.lang.startsWith(langCode.split('-')[0]) && 
+                    (v.name.toLowerCase().includes('female') || 
+                     v.name.toLowerCase().includes('mujer') ||
+                     v.name.toLowerCase().includes('femenin'))
+                ) || voices.find(v => v.lang.startsWith(langCode.split('-')[0]));
+                
+                if (femaleVoice) {
+                    utterance.voice = femaleVoice;
+                }
+                
+                utterance.onend = () => {
+                    hideAudioPlayer();
+                };
+                
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        // Audio player helpers
+        function playAudioFromUrl(url) {
+            const audioElement = document.createElement('audio');
+            audioElement.src = url;
+            audioElement.onended = () => {
+                hideAudioPlayer();
+                URL.revokeObjectURL(url);
+            };
+            audioElement.play().catch(e => {
+                console.log('Audio play error:', e);
+                hideAudioPlayer();
+            });
+            state.currentAudioElement = audioElement;
+        }
+
+        function showAudioPlayer() {
+            const player = document.getElementById('sticky-audio-player');
+            if (player) {
+                player.classList.add('visible');
+                document.getElementById('assistant-btn').classList.add('move-up');
+            }
+        }
+
+        function hideAudioPlayer() {
+            const player = document.getElementById('sticky-audio-player');
+            if (player) {
+                player.classList.remove('visible');
+                document.getElementById('assistant-btn').classList.remove('move-up');
+            }
+        }
+
+        function updatePlayerStatus(status) {
+            const statusEl = document.getElementById('player-status');
+            if (statusEl) {
+                statusEl.textContent = status;
+            }
+        }
+
+        // Expose speak function globally
+        window.speak = speak;
+
         const BRANCHES = [
             { name: "Ciencia", icon: "🔬" }, { name: "Historia", icon: "🏺" }, { name: "Espacio", icon: "🚀" },
             { name: "Arte", icon: "🎨" }, { name: "Animales", icon: "🦁" }, { name: "Tecnología", icon: "💻" },
@@ -396,7 +769,7 @@
         const STATIC_TOPICS_EN = ["The Planets", "Dinosaurs", "Volcanoes", "The Ocean", "Human Body", "Ancient Egypt", "Robots", "Electricity", "Polar Animals", "Rain", "Bees", "Space", "Castles", "Pyramids", "Sharks", "Photosynthesis", "Gravity", "Trains", "Airplanes", "Forests"];
         const BASE_FACTS = [ { es: "Las abejas bailan para decir dónde están las flores.", en: "Bees dance to tell where flowers are." }, { es: "El corazón de un camarón está en su cabeza.", en: "A shrimp's heart is in its head." }, { es: "Los delfines duermen con un ojo abierto.", en: "Dolphins sleep with one eye open." }, { es: "Venus es el planeta más caliente del sistema solar.", en: "Venus is the hottest planet in the solar system." }, { es: "Los pulpos tienen 3 corazones.", en: "Octopuses have 3 hearts." } ];
 
-        const state = { lang: localStorage.getItem('appLang') || 'es', userName: localStorage.getItem('userName') || null, points: 0, history: [], quizHistory: [], currentLesson: null, audioCache: new Map(), audioSource: null, isPlaying: false, currentText: "", itemsToShow: 9, isVoiceActive: false, isNative: false, currentFacts: [], currentFactIndex: 0, searchHistory: [], chatHistory: [], currentBranch: null };
+        const state = { lang: localStorage.getItem('appLang') || 'es', userName: localStorage.getItem('userName') || null, points: 0, history: [], quizHistory: [], currentLesson: null, audioCache: new Map(), audioSource: null, isPlaying: false, currentText: "", itemsToShow: 9, isVoiceActive: false, isNative: false, currentFacts: [], currentFactIndex: 0, searchHistory: [], chatHistory: [], currentBranch: null, currentAudioElement: null };
 
         const i18n = {
             es: { preparing: "Preparando...", appTitle: "Mundo [NAME]", welcome: "¡Hola, [NAME]! 👋", subtitle: "¿Qué quieres descubrir hoy?", tabLessons: "📚 Lecciones", tabQuizzes: "🧠 Pruebas", factTitle: "Curiosidad:", loading: "Cargando...", go: "Ir", recent: "Recientes:", explore: "Explorar", trophies: "Trofeos", loadMore: "🌟 ¡Generar más! 🌟", back: "Volver", preparingLesson: "Robi está preparando la clase...", errorTitle: "¡Ups!", errorDesc: "Robi tuvo un problema.", retry: "Reintentar", letsPractice: "¡Practiquemos!", regenerate: "Versión más larga", complete: "¡Terminé!", moreInfo: "👇 Sigue explorando", quizZone: "Zona de Pruebas", quizDesc: "¡Demuestra lo que sabes!", quizHistory: "Tu Historial:", noQuizHistory: "Sin pruebas.", startQuiz: "🚀 Iniciar Prueba", goToStudy: "Ir a Estudiar", finalExam: "Examen Final", exit: "Salir", saveResult: "Guardar Resultado", quizFinished: "¡Finalizada! 🎉", backQuiz: "Volver", profGemini: "PROFE AI", loadingVoice: "Cargando voz...", personalTutor: "Tu Profe Personal", historyBtn: "📜 Historial", chatPlaceholder: "Escribe tu duda...", searchPlaceholder: "✨ Busca aquí...", points: "Puntos", won: "GANADO", question: "Pregunta", correct: "¡Correcto!", tryAgain: "Intenta otra vez", thinking: "Pensando...", voiceBasic: "Voz básica...", greeting: "¡Hola! Soy Robi. 🍎", namePrompt: "¿Cuál es tu nombre?", nameSubtitle: "Seré tu tutor personal.", nameSubmit: "¡Empezar!" },
@@ -629,12 +1002,14 @@
             }
         }
 
-        // SIMULATED API RESPONSE (REPLACE WITH SERVERLESS IN PROD)
+        // ============================================
+        // LESSON LOADING WITH AI GENERATION + FALLBACK
+        // Uses OpenAI -> Gemini -> Grok for text
+        // Uses OpenAI -> Pollinations for images
+        // ============================================
         async function loadLesson(displayTopic, topicEs, topicEn, imgUrl, isMagicMode) {
-             // En una app real, aquí iría la llamada a tu API de Vercel
-             // Como esto es una demo frontend, simulamos una respuesta "mágica"
-             
              const t = i18n[state.lang];
+             const lang = state.lang;
              
              // Limpiar buscador
              document.getElementById('topic-search').value = "";
@@ -652,30 +1027,145 @@
              document.getElementById('lesson-title').textContent = displayTopic; 
              document.getElementById('lesson-header-bg').style.backgroundImage = `url('${imgUrl}')`;
              
-             // Simular tiempo de carga
-             setTimeout(() => {
-                 const mockData = {
-                     lesson: `¡Hola! Hoy vamos a aprender algo increíble sobre **${displayTopic}**. ¿Sabías que es un tema fascinante? Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo. Imagina que eres un explorador descubriendo secretos antiguos. ¡Sigue leyendo para convertirte en un experto!`,
-                     questions: [
-                         {q: `¿Qué estamos aprendiendo?`, options: ["Nada", displayTopic, "A dormir"], correct: 1},
-                         {q: "Aprender es...", options: ["Aburrido", "Un superpoder", "Malo"], correct: 1},
-                         {q: "¿Qué sigue?", options: ["Investigar más", "Rendirse", "Nada"], correct: 0}
-                     ],
-                     related: ["Ciencia", "Historia", "Arte"]
+             try {
+                 // Generate lesson content using AI with fallback
+                 const prompt = lang === 'es'
+                     ? `Crea una lección educativa corta y divertida para niños sobre "${displayTopic}". 
+                        Incluye:
+                        1. Una introducción emocionante (2-3 oraciones)
+                        2. 3-4 datos interesantes
+                        3. Una conclusión motivadora
+                        Usa un tono amigable y emojis. Máximo 200 palabras.`
+                     : `Create a short and fun educational lesson for children about "${displayTopic}". 
+                        Include:
+                        1. An exciting introduction (2-3 sentences)
+                        2. 3-4 interesting facts
+                        3. A motivating conclusion
+                        Use a friendly tone and emojis. Maximum 200 words.`;
+
+                 const textResult = await generateText(prompt, lang);
+                 
+                 // Generate a better image if the topic was searched
+                 let finalImgUrl = imgUrl;
+                 if (!imgUrl || imgUrl.includes('placeholder')) {
+                     const imageResult = await generateImage(displayTopic, lang);
+                     if (imageResult.success) {
+                         finalImgUrl = imageResult.url;
+                         document.getElementById('lesson-header-bg').style.backgroundImage = `url('${finalImgUrl}')`;
+                     }
+                 }
+
+                 // Create lesson data
+                 const lessonContent = textResult.success ? textResult.text : getFallbackLesson(displayTopic, lang);
+                 
+                 // Generate questions based on the topic
+                 const questions = generateQuestions(displayTopic, lang);
+                 
+                 const lessonData = {
+                     lesson: lessonContent,
+                     questions: questions,
+                     related: ["Ciencia", "Historia", "Arte"],
+                     provider: textResult.provider
                  };
                  
-                 renderLessonContent(mockData);
-                 state.currentLesson = { ...mockData, displayTopic, topicEs, topicEn, imgUrl };
-                 // Aquí iría prefetchAudio
-             }, 1500);
+                 renderLessonContent(lessonData);
+                 state.currentLesson = { ...lessonData, displayTopic, topicEs, topicEn, imgUrl: finalImgUrl };
+                 
+                 // Add to search history
+                 if (!state.searchHistory.includes(displayTopic)) {
+                     state.searchHistory.unshift(displayTopic);
+                     state.searchHistory = state.searchHistory.slice(0, 10);
+                     localStorage.setItem('searchHist', JSON.stringify(state.searchHistory));
+                     renderSearchHistory();
+                 }
+                 
+             } catch (error) {
+                 console.log('Lesson loading error:', error);
+                 // Graceful fallback - never show raw errors to user
+                 const fallbackData = {
+                     lesson: getFallbackLesson(displayTopic, lang),
+                     questions: generateQuestions(displayTopic, lang),
+                     related: ["Ciencia", "Historia", "Arte"],
+                     provider: 'fallback'
+                 };
+                 renderLessonContent(fallbackData);
+                 state.currentLesson = { ...fallbackData, displayTopic, topicEs, topicEn, imgUrl };
+             }
+        }
+
+        // Fallback lesson content when all APIs fail
+        function getFallbackLesson(topic, lang) {
+            if (lang === 'es') {
+                return `¡Hola! 🎉 Hoy vamos a aprender algo increíble sobre **${topic}**. 
+
+¿Sabías que ${topic} es un tema fascinante? 🤔 Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo que nos rodea.
+
+**Datos interesantes:**
+• ${topic} tiene una historia muy especial
+• Hay muchas cosas por descubrir sobre este tema
+• Los científicos siguen aprendiendo cosas nuevas cada día
+
+Imagina que eres un explorador descubriendo secretos antiguos. 🔍 ¡Sigue investigando para convertirte en un experto en ${topic}!
+
+¡Tú puedes aprender todo lo que te propongas! 💪✨`;
+            } else {
+                return `Hello! 🎉 Today we're going to learn something amazing about **${topic}**. 
+
+Did you know that ${topic} is a fascinating subject? 🤔 Experts say that learning about this helps us understand the world around us better.
+
+**Interesting facts:**
+• ${topic} has a very special history
+• There are many things to discover about this topic
+• Scientists keep learning new things every day
+
+Imagine you're an explorer discovering ancient secrets. 🔍 Keep investigating to become an expert on ${topic}!
+
+You can learn anything you set your mind to! 💪✨`;
+            }
+        }
+
+        // Generate practice questions for a topic
+        function generateQuestions(topic, lang) {
+            if (lang === 'es') {
+                return [
+                    { q: `¿Qué estamos aprendiendo hoy?`, options: ["Nada especial", topic, "A dormir"], correct: 1 },
+                    { q: "Aprender cosas nuevas es...", options: ["Aburrido", "¡Un superpoder! 🦸", "Malo"], correct: 1 },
+                    { q: "¿Qué deberías hacer después de esta lección?", options: ["Investigar más sobre el tema", "Olvidarlo todo", "Nada"], correct: 0 }
+                ];
+            } else {
+                return [
+                    { q: `What are we learning about today?`, options: ["Nothing special", topic, "How to sleep"], correct: 1 },
+                    { q: "Learning new things is...", options: ["Boring", "A superpower! 🦸", "Bad"], correct: 1 },
+                    { q: "What should you do after this lesson?", options: ["Research more about the topic", "Forget everything", "Nothing"], correct: 0 }
+                ];
+            }
         }
 
         function renderLessonContent(data) {
-            document.getElementById('lesson-loader').classList.add('hidden'); document.getElementById('lesson-content-wrapper').classList.remove('hidden'); document.getElementById('lesson-content').innerHTML = data.lesson;
-            document.getElementById('read-for-me-btn').onclick = () => { playClickSound(); alert("Audio simulado (conecta API real)"); };
+            document.getElementById('lesson-loader').classList.add('hidden'); 
+            document.getElementById('lesson-content-wrapper').classList.remove('hidden'); 
+            document.getElementById('lesson-content').innerHTML = data.lesson;
+            
+            // Read for me button - uses AI voice with fallback
+            document.getElementById('read-for-me-btn').onclick = () => { 
+                playClickSound(); 
+                const lessonText = document.getElementById('lesson-content').innerText;
+                speak(lessonText);
+            };
             
             const qList = document.getElementById('lesson-questions-list'); qList.innerHTML = '';
-            if(data.questions) { data.questions.forEach((item, idx) => { const qContainer = document.createElement('div'); qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; let optionsHtml = ''; item.options.forEach((opt, optIdx) => { optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${opt}')">${opt}</div>`; }); qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; qList.appendChild(qContainer); }); }
+            if(data.questions) { 
+                data.questions.forEach((item, idx) => { 
+                    const qContainer = document.createElement('div'); 
+                    qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; 
+                    let optionsHtml = ''; 
+                    item.options.forEach((opt, optIdx) => { 
+                        optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${opt.replace(/'/g, "\\'")}')">${opt}</div>`; 
+                    }); 
+                    qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl" onclick="speak('${item.q.replace(/'/g, "\\'")}')">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; 
+                    qList.appendChild(qContainer); 
+                }); 
+            }
         }
         
         document.getElementById('generate-button').onclick = () => { if(state.currentLesson) loadLesson(state.currentLesson.displayTopic, state.currentLesson.topicEs, state.currentLesson.topicEn, state.currentLesson.imgUrl, true); };
@@ -773,7 +1263,210 @@
                 document.getElementById('section-explore').classList.add('hidden'); document.getElementById('section-trophies').classList.remove('hidden'); document.getElementById('section-branches').classList.add('hidden');
                 e.target.classList.add('text-blue-600','border-blue-600'); document.getElementById('subtab-explore').classList.remove('text-blue-600','border-blue-600'); document.getElementById('subtab-branches').classList.remove('text-blue-600','border-blue-600'); renderHistory(); 
             };
+
+            // ============================================
+            // AUDIO PLAYER CONTROLS
+            // ============================================
+            document.getElementById('player-play-pause').onclick = () => {
+                playClickSound();
+                if (state.currentAudioElement) {
+                    if (state.currentAudioElement.paused) {
+                        state.currentAudioElement.play();
+                        document.getElementById('player-play-pause').textContent = '⏸';
+                    } else {
+                        state.currentAudioElement.pause();
+                        document.getElementById('player-play-pause').textContent = '▶';
+                    }
+                } else if ('speechSynthesis' in window) {
+                    if (window.speechSynthesis.speaking && !window.speechSynthesis.paused) {
+                        window.speechSynthesis.pause();
+                        document.getElementById('player-play-pause').textContent = '▶';
+                    } else if (window.speechSynthesis.paused) {
+                        window.speechSynthesis.resume();
+                        document.getElementById('player-play-pause').textContent = '⏸';
+                    }
+                }
+            };
+
+            document.getElementById('player-close').onclick = () => {
+                playClickSound();
+                if (state.currentAudioElement) {
+                    state.currentAudioElement.pause();
+                    state.currentAudioElement = null;
+                }
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.cancel();
+                }
+                hideAudioPlayer();
+            };
+
+            // ============================================
+            // CHAT FUNCTIONALITY WITH AI
+            // ============================================
+            document.getElementById('assistant-btn').onclick = () => {
+                playClickSound();
+                document.getElementById('chat-overlay').classList.add('open');
+                // Add welcome message if empty
+                const chatMessages = document.getElementById('chat-messages');
+                if (chatMessages.children.length === 0) {
+                    const lang = state.lang;
+                    const greeting = lang === 'es' 
+                        ? `¡Hola ${state.userName || 'amigo'}! 👋 Soy Robi, tu tutora personal. ¿En qué puedo ayudarte hoy? Puedes preguntarme sobre cualquier tema que quieras aprender.`
+                        : `Hello ${state.userName || 'friend'}! 👋 I'm Robi, your personal tutor. How can I help you today? You can ask me about any topic you want to learn.`;
+                    addChatMessage(greeting, 'bot');
+                }
+            };
+
+            document.getElementById('close-chat').onclick = () => {
+                playClickSound();
+                document.getElementById('chat-overlay').classList.remove('open');
+            };
+
+            document.getElementById('minimize-chat').onclick = () => {
+                playClickSound();
+                document.getElementById('chat-overlay').classList.remove('open');
+            };
+
+            document.getElementById('send-chat').onclick = async () => {
+                playClickSound();
+                const input = document.getElementById('chat-input');
+                const message = input.value.trim();
+                if (!message) return;
+                
+                input.value = '';
+                addChatMessage(message, 'user');
+                
+                // Show typing indicator
+                const typingId = addChatMessage(state.lang === 'es' ? 'Pensando...' : 'Thinking...', 'bot', true);
+                
+                try {
+                    const lang = state.lang;
+                    const prompt = lang === 'es'
+                        ? `Eres Robi, una tutora amigable para niños. Responde de forma clara, divertida y educativa en español de México. La pregunta es: ${message}`
+                        : `You are Robi, a friendly tutor for children. Respond clearly, fun and educational in American English. The question is: ${message}`;
+                    
+                    const result = await generateText(prompt, lang);
+                    
+                    // Remove typing indicator
+                    removeTypingIndicator(typingId);
+                    
+                    // Add bot response
+                    addChatMessage(result.text, 'bot');
+                    
+                    // Optionally speak the response
+                    // speak(result.text);
+                } catch (e) {
+                    console.log('Chat error:', e);
+                    removeTypingIndicator(typingId);
+                    const errorMsg = state.lang === 'es' 
+                        ? '¡Ups! Algo salió mal. ¿Puedes intentar de nuevo?' 
+                        : 'Oops! Something went wrong. Can you try again?';
+                    addChatMessage(errorMsg, 'bot');
+                }
+            };
+
+            document.getElementById('chat-input').onkeypress = (e) => {
+                if (e.key === 'Enter') {
+                    document.getElementById('send-chat').click();
+                }
+            };
+
+            // Voice input for chat
+            document.getElementById('voice-chat-btn').onclick = () => {
+                playClickSound();
+                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = state.lang === 'es' ? 'es-MX' : 'en-US';
+                    recognition.interimResults = false;
+                    
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        document.getElementById('chat-input').value = transcript;
+                        document.getElementById('send-chat').click();
+                    };
+                    
+                    recognition.onerror = (event) => {
+                        console.log('Speech recognition error:', event.error);
+                    };
+                    
+                    recognition.start();
+                    document.getElementById('voice-chat-btn').classList.add('bg-red-500', 'text-white');
+                    
+                    recognition.onend = () => {
+                        document.getElementById('voice-chat-btn').classList.remove('bg-red-500', 'text-white');
+                    };
+                }
+            };
+
+            // Voice input for search
+            document.getElementById('search-mic-btn').onclick = () => {
+                playClickSound();
+                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    const recognition = new SpeechRecognition();
+                    recognition.lang = state.lang === 'es' ? 'es-MX' : 'en-US';
+                    recognition.interimResults = false;
+                    
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        document.getElementById('topic-search').value = transcript;
+                        document.getElementById('search-btn').click();
+                    };
+                    
+                    recognition.onerror = (event) => {
+                        console.log('Speech recognition error:', event.error);
+                    };
+                    
+                    recognition.start();
+                    document.getElementById('search-mic-btn').classList.add('text-red-500');
+                    
+                    recognition.onend = () => {
+                        document.getElementById('search-mic-btn').classList.remove('text-red-500');
+                    };
+                }
+            };
         });
+
+        // ============================================
+        // CHAT MESSAGE HELPERS
+        // ============================================
+        function addChatMessage(text, sender, isTyping = false) {
+            const chatMessages = document.getElementById('chat-messages');
+            const messageDiv = document.createElement('div');
+            const id = 'msg-' + Date.now();
+            messageDiv.id = id;
+            
+            if (sender === 'user') {
+                messageDiv.className = 'flex justify-end';
+                messageDiv.innerHTML = `
+                    <div class="bg-blue-600 text-white px-4 py-3 rounded-2xl rounded-br-md max-w-[80%] shadow-sm">
+                        <p class="text-sm font-medium">${text}</p>
+                    </div>
+                `;
+            } else {
+                messageDiv.className = 'flex justify-start gap-2';
+                messageDiv.innerHTML = `
+                    <div class="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-500 rounded-full flex items-center justify-center text-white text-sm flex-shrink-0">🍎</div>
+                    <div class="bg-white px-4 py-3 rounded-2xl rounded-bl-md max-w-[80%] shadow-sm border border-slate-100 ${isTyping ? 'animate-pulse' : ''}">
+                        <p class="text-sm text-slate-700 font-medium">${text}</p>
+                        ${!isTyping ? `<button class="text-blue-400 hover:text-blue-600 text-xs mt-1" onclick="speak('${text.replace(/'/g, "\\'")}')">🔊 Escuchar</button>` : ''}
+                    </div>
+                `;
+            }
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            
+            return id;
+        }
+
+        function removeTypingIndicator(id) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.remove();
+            }
+        }
     </script>
 </body>
 </html>
