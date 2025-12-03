@@ -741,6 +741,9 @@
                 } else if (speechSynthesis.paused) {
                     speechSynthesis.resume();
                     state.isPlaying = true;
+                } else if (!speechSynthesis.speaking && state.currentText) {
+                    // Speech has ended, replay the current text
+                    speakWithBrowserTTS(state.currentText, state.lang);
                 }
                 updatePlayPauseButton();
             }
