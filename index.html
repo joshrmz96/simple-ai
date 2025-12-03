@@ -627,18 +627,32 @@
         // TTS INTEGRATION - Priority: Gemini → OpenAI → Murf → Browser
         // =====================================================
 
+        // TTS provider display names
+        const TTS_PROVIDER_NAMES = {
+            'gemini': 'Gemini TTS',
+            'openai': 'OpenAI TTS',
+            'murf': 'Murf.ai'
+        };
+
         // Helper function to convert base64 to ArrayBuffer
         function base64ToArrayBuffer(base64) {
-            const binaryString = atob(base64);
-            const len = binaryString.length;
-            const bytes = new Uint8Array(len);
-            for (let i = 0; i < len; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
+            try {
+                const binaryString = atob(base64);
+                const len = binaryString.length;
+                const bytes = new Uint8Array(len);
+                for (let i = 0; i < len; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+                return bytes.buffer;
+            } catch (error) {
+                console.log('base64ToArrayBuffer error:', error.message);
+                throw new Error('Invalid base64 audio data');
             }
-            return bytes.buffer;
         }
 
         // Helper function to convert PCM data to WAV format
+        // Gemini TTS typically returns raw PCM audio data that needs WAV headers to be playable
+        // Default params: 24000 Hz sample rate (common for speech), mono, 16-bit (CD quality)
         function pcmToWavBlob(pcmData, sampleRate = 24000, numChannels = 1, bitsPerSample = 16) {
             const byteRate = sampleRate * numChannels * bitsPerSample / 8;
             const blockAlign = numChannels * bitsPerSample / 8;
@@ -714,31 +728,23 @@
 
             const data = await response.json();
             
-            // Check if audio data is present in the response
-            if (data.candidates && 
-                data.candidates[0] && 
-                data.candidates[0].content && 
-                data.candidates[0].content.parts && 
-                data.candidates[0].content.parts[0]) {
+            // Check if audio data is present in the response using optional chaining
+            const part = data?.candidates?.[0]?.content?.parts?.[0];
+            
+            if (part?.inlineData?.data) {
+                const audioData = part.inlineData.data;
+                const mimeType = part.inlineData.mimeType || 'audio/wav';
                 
-                const part = data.candidates[0].content.parts[0];
-                
-                // Handle inline audio data (base64 encoded)
-                if (part.inlineData && part.inlineData.data) {
-                    const audioData = part.inlineData.data;
-                    const mimeType = part.inlineData.mimeType || 'audio/wav';
-                    
-                    // If it's raw PCM, convert to WAV
-                    if (mimeType.includes('pcm') || mimeType.includes('raw')) {
-                        const pcmBuffer = base64ToArrayBuffer(audioData);
-                        const wavBlob = pcmToWavBlob(pcmBuffer);
-                        return URL.createObjectURL(wavBlob);
-                    }
-                    
-                    // If it's already a playable format
-                    const audioBlob = new Blob([base64ToArrayBuffer(audioData)], { type: mimeType });
-                    return URL.createObjectURL(audioBlob);
+                // If it's raw PCM, convert to WAV
+                if (mimeType.includes('pcm') || mimeType.includes('raw')) {
+                    const pcmBuffer = base64ToArrayBuffer(audioData);
+                    const wavBlob = pcmToWavBlob(pcmBuffer);
+                    return URL.createObjectURL(wavBlob);
                 }
+                
+                // If it's already a playable format
+                const audioBlob = new Blob([base64ToArrayBuffer(audioData)], { type: mimeType });
+                return URL.createObjectURL(audioBlob);
             }
             
             throw new Error('No audio data in Gemini response');
@@ -887,13 +893,8 @@
                 } else if (result.audioUrl) {
                     // Play audio from TTS provider
                     playAudioFromUrl(result.audioUrl);
-                    // Display provider name
-                    const providerNames = {
-                        'gemini': 'Gemini TTS',
-                        'openai': 'OpenAI TTS',
-                        'murf': 'Murf.ai'
-                    };
-                    updatePlayerStatus(providerNames[result.provider] || result.provider);
+                    // Display provider name using module-level constant
+                    updatePlayerStatus(TTS_PROVIDER_NAMES[result.provider] || result.provider);
                 }
             } catch (error) {
                 console.log('Voice generation failed completely:', error);
