@@ -424,12 +424,15 @@
             openai: {
                 apiKey: localStorage.getItem('openai_api_key') || 'YOUR_OPENAI_API_KEY',
                 endpoint: 'https://api.openai.com/v1/chat/completions',
-                model: 'gpt-3.5-turbo'
+                model: 'gpt-3.5-turbo',
+                ttsEndpoint: 'https://api.openai.com/v1/audio/speech',
+                ttsModel: 'tts-1'
             },
             // Google Gemini - Priority 2
             gemini: {
                 apiKey: localStorage.getItem('gemini_api_key') || 'YOUR_GEMINI_API_KEY',
-                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+                ttsEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent'
             },
             // Grok (xAI) - Priority 3
             grok: {
@@ -688,29 +691,193 @@
             return false;
         }
 
+        // Helper to write ASCII strings into DataView for WAV header
+        function writeString(view, offset, string) {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        }
+
+        // Convert raw PCM audio data (L16) to WAV format
+        // Creates a standard WAV header for 24kHz, mono, 16-bit audio
+        function convertL16ToWav_(pcmData) {
+            const sampleRate = 24000;
+            const numChannels = 1;
+            const bitsPerSample = 16;
+            const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+            const blockAlign = numChannels * bitsPerSample / 8;
+            const dataSize = pcmData.length;
+            const headerSize = 44;
+            const totalSize = headerSize + dataSize;
+
+            const buffer = new ArrayBuffer(totalSize);
+            const view = new DataView(buffer);
+
+            // RIFF chunk descriptor
+            writeString(view, 0, 'RIFF');
+            view.setUint32(4, totalSize - 8, true); // File size - 8
+            writeString(view, 8, 'WAVE');
+
+            // fmt sub-chunk
+            writeString(view, 12, 'fmt ');
+            view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+            view.setUint16(20, 1, true); // AudioFormat (1 for PCM)
+            view.setUint16(22, numChannels, true); // NumChannels
+            view.setUint32(24, sampleRate, true); // SampleRate
+            view.setUint32(28, byteRate, true); // ByteRate
+            view.setUint16(32, blockAlign, true); // BlockAlign
+            view.setUint16(34, bitsPerSample, true); // BitsPerSample
+
+            // data sub-chunk
+            writeString(view, 36, 'data');
+            view.setUint32(40, dataSize, true); // Subchunk2Size
+
+            // Write PCM data
+            const pcmView = new Uint8Array(buffer, headerSize);
+            pcmView.set(pcmData);
+
+            return buffer;
+        }
+
+        // Generate voice with OpenAI TTS
+        async function generateVoiceWithOpenAI(text) {
+            if (!isApiKeyConfigured(API_CONFIG.openai.apiKey)) {
+                throw new Error('OpenAI API key not configured');
+            }
+
+            const cleanText = stripEmojis(text);
+
+            const response = await fetch(API_CONFIG.openai.ttsEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.openai.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: API_CONFIG.openai.ttsModel,
+                    input: cleanText,
+                    voice: 'nova'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI TTS API error: ${response.status}`);
+            }
+
+            const audioBlob = await response.blob();
+            return URL.createObjectURL(audioBlob);
+        }
+
+        // Generate voice with Gemini TTS
+        async function generateVoiceWithGemini(text) {
+            if (!isApiKeyConfigured(API_CONFIG.gemini.apiKey)) {
+                throw new Error('Gemini API key not configured');
+            }
+
+            const cleanText = stripEmojis(text);
+            const url = `${API_CONFIG.gemini.ttsEndpoint}?key=${API_CONFIG.gemini.apiKey}`;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ text: cleanText }]
+                    }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: {
+                                    voiceName: "Kore"
+                                }
+                            }
+                        }
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Gemini TTS API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            
+            // Extract audio data from response
+            const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+            if (!audioData) {
+                throw new Error('No audio data in Gemini response');
+            }
+
+            // Decode Base64 to Uint8Array
+            const binaryString = atob(audioData);
+            const pcmData = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                pcmData[i] = binaryString.charCodeAt(i);
+            }
+
+            // Convert PCM to WAV
+            const wavBuffer = convertL16ToWav_(pcmData);
+            const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+            return URL.createObjectURL(wavBlob);
+        }
+
         // Main speak function that handles all voice scenarios
+        // Priority: Gemini → OpenAI → Murf.ai → Browser TTS
         async function speak(text) {
             if (!text || text.trim() === '') return;
             
             const language = state.lang || 'es';
+            const player = document.getElementById('sticky-audio-player');
             
+            // Show player
+            if (player) player.classList.add('visible');
+            
+            // Try Gemini first
             try {
-                const result = await generateVoice(text, language);
-                
-                if (result.useBrowserTTS) {
-                    // Use browser TTS as fallback
-                    speakWithBrowserTTS(result.text, result.language);
-                    updatePlayerStatus(i18n[state.lang].voiceBasic || 'Basic voice...');
-                } else if (result.audioUrl) {
-                    // Play Murf.ai audio
-                    playAudioFromUrl(result.audioUrl);
-                    updatePlayerStatus('Murf.ai');
-                }
+                console.log('Trying Gemini TTS...');
+                updatePlayerStatus('Gemini Voice...');
+                const audioUrl = await generateVoiceWithGemini(text);
+                console.log('Gemini TTS succeeded');
+                updatePlayerStatus('Gemini Voice');
+                playAudioFromUrl(audioUrl);
+                return;
             } catch (error) {
-                console.log('Voice generation failed completely:', error);
-                // Silent fail - no error shown to user
-                speakWithBrowserTTS(text, language);
+                console.log('Gemini TTS failed:', error.message);
             }
+            
+            // Try OpenAI second
+            try {
+                console.log('Trying OpenAI TTS...');
+                updatePlayerStatus('OpenAI Voice...');
+                const audioUrl = await generateVoiceWithOpenAI(text);
+                console.log('OpenAI TTS succeeded');
+                updatePlayerStatus('OpenAI Voice');
+                playAudioFromUrl(audioUrl);
+                return;
+            } catch (error) {
+                console.log('OpenAI TTS failed:', error.message);
+            }
+            
+            // Try Murf.ai third
+            try {
+                console.log('Trying Murf.ai TTS...');
+                updatePlayerStatus('Murf.ai Voice...');
+                const audioUrl = await generateVoiceWithMurf(text, language);
+                console.log('Murf.ai TTS succeeded');
+                updatePlayerStatus('Murf.ai Voice');
+                playAudioFromUrl(audioUrl);
+                return;
+            } catch (error) {
+                console.log('Murf.ai TTS failed:', error.message);
+            }
+            
+            // Fall back to browser TTS
+            console.log('Falling back to browser TTS');
+            updatePlayerStatus(i18n[state.lang].voiceBasic || 'Basic voice...');
+            speakWithBrowserTTS(text, language);
         }
 
         // Helper to play audio from URL
