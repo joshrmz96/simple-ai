@@ -60,6 +60,22 @@
         .read-for-me-btn { background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%); border: 2px solid #bae6fd; color: #0284c7; padding: 12px 20px; border-radius: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; cursor: pointer; margin-bottom: 24px; transition: all 0.2s; box-shadow: 0 4px 0 #bae6fd; }
         .read-for-me-btn:active { transform: translateY(2px); box-shadow: none; }
         .read-for-me-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        
+        /* API Configuration Modal Styles */
+        .config-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 7000; opacity: 0; visibility: hidden; transition: all 0.3s; backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; }
+        .config-overlay.open { opacity: 1; visibility: visible; }
+        .config-modal { background: white; border-radius: 24px; max-width: 450px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); transform: scale(0.9); transition: transform 0.3s; }
+        .config-overlay.open .config-modal { transform: scale(1); }
+        .config-input { width: 100%; padding: 12px 16px; border: 2px solid #e2e8f0; border-radius: 12px; font-size: 14px; outline: none; transition: border-color 0.2s; }
+        .config-input:focus { border-color: #3b82f6; }
+        .config-label { display: block; font-weight: 600; color: #475569; margin-bottom: 6px; font-size: 14px; }
+        .ai-status-indicator { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+        .ai-status-indicator.success { background: #dcfce7; color: #15803d; }
+        .ai-status-indicator.error { background: #fee2e2; color: #b91c1c; }
+        .ai-status-indicator.pending { background: #fef9c3; color: #a16207; }
+        .ai-gen-btn { background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%); color: white; border: none; border-radius: 12px; padding: 10px 16px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; box-shadow: 0 3px 0 #5b21b6; }
+        .ai-gen-btn:active { transform: translateY(2px); box-shadow: none; }
+        .ai-gen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body class="no-select">
@@ -125,6 +141,7 @@
                     </div>
                 </button>
                 <div class="flex gap-3 items-center">
+                    <button id="config-btn" class="text-xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-purple-50 transition cursor-pointer" onclick="openConfigModal(); playClickSound()">⚙️</button>
                     <button id="music-btn" class="text-xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="toggleMusic()">🎵</button>
                     <button id="home-btn" class="text-2xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="playClickSound()">🏠</button>
                     <button id="lang-toggle" class="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 active:scale-95 cursor-pointer relative z-30" onclick="playClickSound()">
@@ -257,8 +274,13 @@
                                 <div id="lesson-questions-list" class="space-y-6"></div>
                             </div>
                             <div class="flex flex-col sm:flex-row gap-4 mt-8">
+                                 <button id="generate-image-btn" class="flex-1 ai-gen-btn py-4 text-lg flex items-center justify-center gap-2" onclick="playClickSound()">🎨 <span>Generar Imagen AI</span></button>
                                  <button id="generate-button" class="flex-1 btn-secondary-fun py-4 text-lg flex items-center justify-center gap-2" onclick="playClickSound()">✨ <span data-i18n="regenerate">Versión más larga</span></button>
                                 <button id="complete-button" class="flex-[2] btn-fun py-4 text-lg shadow-lg shadow-blue-500/30 text-white" onclick="playClickSound()">✅ <span data-i18n="complete">¡Terminé!</span> (+50)</button>
+                            </div>
+                            <div id="ai-generated-image-container" class="hidden mt-6 text-center">
+                                <img id="ai-generated-image" class="max-w-full rounded-2xl shadow-lg border-4 border-white mx-auto" alt="AI Generated Image">
+                                <p class="text-xs text-slate-400 mt-2">✨ Imagen generada con DALL-E 3</p>
                             </div>
                             <div class="mt-12 pt-8 border-t-4 border-dashed border-slate-100">
                                 <div id="show-more-btn" class="text-center mb-6"><h3 class="text-xl font-bold text-slate-400" data-i18n="moreInfo">👇 Sigue explorando</h3></div>
@@ -355,9 +377,433 @@
         </div>
     </div>
 
+    <!-- API Configuration Modal -->
+    <div id="config-overlay" class="config-overlay">
+        <div class="config-modal">
+            <div class="bg-gradient-to-r from-purple-600 to-indigo-600 p-5 text-white flex justify-between items-center rounded-t-3xl">
+                <div>
+                    <h3 class="font-bold text-xl fun-font">⚙️ Configuración de APIs</h3>
+                    <p class="text-purple-200 text-sm">Ingresa tus claves de API</p>
+                </div>
+                <button id="close-config" class="text-white/70 active:text-white active:bg-white/20 rounded-full w-10 h-10 flex items-center justify-center text-2xl transition cursor-pointer" onclick="playClickSound()">✕</button>
+            </div>
+            <div class="p-6 space-y-5">
+                <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                    <strong>🔐 Seguridad:</strong> Tus claves se guardan solo en tu navegador y nunca se comparten.
+                </div>
+                
+                <div>
+                    <label class="config-label">🤖 OpenAI API Key</label>
+                    <input type="password" id="config-openai-key" class="config-input" placeholder="sk-...">
+                    <p class="text-xs text-slate-400 mt-1">Para GPT-4o, DALL-E 3 y TTS</p>
+                </div>
+                
+                <div>
+                    <label class="config-label">💎 Gemini API Key</label>
+                    <input type="password" id="config-gemini-key" class="config-input" placeholder="AIza...">
+                    <p class="text-xs text-slate-400 mt-1">Texto (fallback de OpenAI)</p>
+                </div>
+                
+                <div>
+                    <label class="config-label">🚀 Grok (xAI) API Key</label>
+                    <input type="password" id="config-grok-key" class="config-input" placeholder="xai-...">
+                    <p class="text-xs text-slate-400 mt-1">Texto (fallback secundario)</p>
+                </div>
+                
+                <div>
+                    <label class="config-label">🎙️ Murf API Key (Opcional)</label>
+                    <input type="password" id="config-murf-key" class="config-input" placeholder="...">
+                    <p class="text-xs text-slate-400 mt-1">Voz alternativa (opcional)</p>
+                </div>
+                
+                <div class="flex gap-3 pt-2">
+                    <button id="save-config-btn" class="flex-1 btn-fun py-3" onclick="playClickSound()">💾 Guardar</button>
+                    <button id="test-config-btn" class="flex-1 btn-secondary-fun py-3" onclick="playClickSound()">🧪 Probar APIs</button>
+                </div>
+                
+                <div id="api-test-results" class="hidden space-y-2 pt-2 border-t border-slate-100">
+                    <p class="text-sm font-bold text-slate-600 mb-2">Estado de APIs:</p>
+                    <div id="api-status-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         // APIS - AQUI ES DONDE OCURRE LA MAGIA
         // IMPORTANTE: EL PROXY ES SOLO PARA DEMOSTRACIÓN. EN PRODUCCION USA SERVERLESS
+        
+        // ==================== API CONFIGURATION ====================
+        // DO NOT HARDCODE API KEYS - Users will input their own keys
+        const API_CONFIG = {
+            openai: { key: localStorage.getItem('openai_api_key') || 'YOUR_OPENAI_KEY', baseUrl: 'https://api.openai.com/v1' },
+            gemini: { key: localStorage.getItem('gemini_api_key') || 'YOUR_GEMINI_KEY', baseUrl: 'https://generativelanguage.googleapis.com/v1beta' },
+            grok: { key: localStorage.getItem('grok_api_key') || 'YOUR_GROK_KEY', baseUrl: 'https://api.x.ai/v1' },
+            murf: { key: localStorage.getItem('murf_api_key') || 'YOUR_MURF_KEY', baseUrl: 'https://api.murf.ai/v1' }
+        };
+
+        // Voice Configuration - Female voices for Spanish (Mexico) & English (US)
+        const VOICE_CONFIG = {
+            es: { openai: 'nova', locale: 'es-MX' }, // nova = female voice
+            en: { openai: 'nova', locale: 'en-US' }  // nova = female voice
+        };
+
+        // ==================== AI SERVICE FUNCTIONS ====================
+        
+        // Text Generation with Fallback: OpenAI → Gemini → Grok
+        async function generateText(prompt, lang = 'es') {
+            const systemPrompt = lang === 'es' 
+                ? 'Eres Robi, un tutor amigable que explica temas de manera simple y divertida para niños. Responde en español de México.'
+                : 'You are Robi, a friendly tutor who explains topics in a simple and fun way for kids. Respond in American English.';
+            
+            // Try OpenAI first
+            try {
+                const result = await callOpenAIText(prompt, systemPrompt);
+                if (result) return { text: result, provider: 'openai' };
+            } catch (error) {
+                console.warn('OpenAI failed, trying Gemini:', error.message);
+            }
+            
+            // Fallback to Gemini
+            try {
+                const result = await callGeminiText(prompt, systemPrompt);
+                if (result) return { text: result, provider: 'gemini' };
+            } catch (error) {
+                console.warn('Gemini failed, trying Grok:', error.message);
+            }
+            
+            // Fallback to Grok
+            try {
+                const result = await callGrokText(prompt, systemPrompt);
+                if (result) return { text: result, provider: 'grok' };
+            } catch (error) {
+                console.warn('Grok failed:', error.message);
+            }
+            
+            // All services failed - return graceful error message
+            return { 
+                text: lang === 'es' 
+                    ? '¡Ups! No pude conectarme. Por favor configura tus claves de API en ⚙️ Configuración.' 
+                    : 'Oops! Could not connect. Please configure your API keys in ⚙️ Settings.',
+                provider: 'none',
+                error: true
+            };
+        }
+
+        async function callOpenAIText(prompt, systemPrompt) {
+            if (!API_CONFIG.openai.key || API_CONFIG.openai.key === 'YOUR_OPENAI_KEY') {
+                throw new Error('OpenAI API key not configured');
+            }
+            
+            const response = await fetch(`${API_CONFIG.openai.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: prompt }
+                    ],
+                    max_tokens: 1000,
+                    temperature: 0.7
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error?.message || `HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || null;
+        }
+
+        async function callGeminiText(prompt, systemPrompt) {
+            if (!API_CONFIG.gemini.key || API_CONFIG.gemini.key === 'YOUR_GEMINI_KEY') {
+                throw new Error('Gemini API key not configured');
+            }
+            
+            const response = await fetch(`${API_CONFIG.gemini.baseUrl}/models/gemini-1.5-flash:generateContent?key=${API_CONFIG.gemini.key}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ text: `${systemPrompt}\n\nUser: ${prompt}` }]
+                    }],
+                    generationConfig: { maxOutputTokens: 1000, temperature: 0.7 }
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error?.message || `HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+        }
+
+        async function callGrokText(prompt, systemPrompt) {
+            if (!API_CONFIG.grok.key || API_CONFIG.grok.key === 'YOUR_GROK_KEY') {
+                throw new Error('Grok API key not configured');
+            }
+            
+            const response = await fetch(`${API_CONFIG.grok.baseUrl}/chat/completions`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.grok.key}`
+                },
+                body: JSON.stringify({
+                    model: 'grok-beta',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: prompt }
+                    ],
+                    max_tokens: 1000,
+                    temperature: 0.7
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json().catch(() => ({}));
+                throw new Error(error.error?.message || `HTTP ${response.status}`);
+            }
+            
+            const data = await response.json();
+            return data.choices?.[0]?.message?.content || null;
+        }
+
+        // Image Generation with DALL-E 3
+        async function generateImage(prompt, lang = 'es') {
+            if (!API_CONFIG.openai.key || API_CONFIG.openai.key === 'YOUR_OPENAI_KEY') {
+                return { 
+                    url: null, 
+                    error: true, 
+                    message: lang === 'es' 
+                        ? 'Configura tu clave de OpenAI para generar imágenes.' 
+                        : 'Configure your OpenAI key to generate images.' 
+                };
+            }
+            
+            try {
+                const response = await fetch(`${API_CONFIG.openai.baseUrl}/images/generations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: 'dall-e-3',
+                        prompt: `Child-friendly educational illustration: ${prompt}. Style: colorful, friendly, cartoon-like, safe for children.`,
+                        n: 1,
+                        size: '1024x1024',
+                        quality: 'standard'
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error?.message || `HTTP ${response.status}`);
+                }
+                
+                const data = await response.json();
+                return { url: data.data?.[0]?.url || null, provider: 'openai' };
+            } catch (error) {
+                console.error('Image generation failed:', error);
+                return { 
+                    url: null, 
+                    error: true, 
+                    message: lang === 'es' 
+                        ? `Error al generar imagen: ${error.message}` 
+                        : `Image generation error: ${error.message}` 
+                };
+            }
+        }
+
+        // Voice Generation with OpenAI TTS (Female voice)
+        async function generateVoice(text, lang = 'es') {
+            if (!API_CONFIG.openai.key || API_CONFIG.openai.key === 'YOUR_OPENAI_KEY') {
+                // Fallback to browser's native TTS
+                return speakNative(text, lang);
+            }
+            
+            try {
+                const voiceConfig = VOICE_CONFIG[lang] || VOICE_CONFIG.es;
+                
+                const response = await fetch(`${API_CONFIG.openai.baseUrl}/audio/speech`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: 'tts-1',
+                        input: text.substring(0, 4096), // TTS limit
+                        voice: voiceConfig.openai, // 'nova' = female voice
+                        response_format: 'mp3'
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({}));
+                    throw new Error(error.error?.message || `HTTP ${response.status}`);
+                }
+                
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                return { url: audioUrl, provider: 'openai' };
+            } catch (error) {
+                console.warn('OpenAI TTS failed, using native:', error.message);
+                return speakNative(text, lang);
+            }
+        }
+
+        // Native browser TTS fallback (Female voice)
+        function speakNative(text, lang = 'es') {
+            return new Promise((resolve) => {
+                if (!('speechSynthesis' in window)) {
+                    resolve({ error: true, message: 'Speech synthesis not supported' });
+                    return;
+                }
+                
+                const utterance = new SpeechSynthesisUtterance(text);
+                const locale = lang === 'es' ? 'es-MX' : 'en-US';
+                utterance.lang = locale;
+                
+                // Try to find a female voice
+                const voices = speechSynthesis.getVoices();
+                const femaleVoice = voices.find(v => 
+                    v.lang.startsWith(lang) && 
+                    (v.name.toLowerCase().includes('female') || 
+                     v.name.toLowerCase().includes('paulina') || 
+                     v.name.toLowerCase().includes('samantha') ||
+                     v.name.toLowerCase().includes('monica'))
+                ) || voices.find(v => v.lang.startsWith(lang));
+                
+                if (femaleVoice) utterance.voice = femaleVoice;
+                
+                utterance.onend = () => resolve({ provider: 'native', success: true });
+                utterance.onerror = (e) => resolve({ error: true, message: e.error });
+                
+                speechSynthesis.speak(utterance);
+                resolve({ provider: 'native', speaking: true });
+            });
+        }
+
+        // Stop native speech
+        function stopSpeaking() {
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+            }
+        }
+
+        // ==================== CONFIG MODAL FUNCTIONS ====================
+        window.openConfigModal = function() {
+            const overlay = document.getElementById('config-overlay');
+            overlay.classList.add('open');
+            
+            // Load saved keys
+            document.getElementById('config-openai-key').value = API_CONFIG.openai.key !== 'YOUR_OPENAI_KEY' ? API_CONFIG.openai.key : '';
+            document.getElementById('config-gemini-key').value = API_CONFIG.gemini.key !== 'YOUR_GEMINI_KEY' ? API_CONFIG.gemini.key : '';
+            document.getElementById('config-grok-key').value = API_CONFIG.grok.key !== 'YOUR_GROK_KEY' ? API_CONFIG.grok.key : '';
+            document.getElementById('config-murf-key').value = API_CONFIG.murf.key !== 'YOUR_MURF_KEY' ? API_CONFIG.murf.key : '';
+        };
+
+        function closeConfigModal() {
+            document.getElementById('config-overlay').classList.remove('open');
+        }
+
+        function saveAPIConfig() {
+            const openaiKey = document.getElementById('config-openai-key').value.trim();
+            const geminiKey = document.getElementById('config-gemini-key').value.trim();
+            const grokKey = document.getElementById('config-grok-key').value.trim();
+            const murfKey = document.getElementById('config-murf-key').value.trim();
+            
+            if (openaiKey) {
+                API_CONFIG.openai.key = openaiKey;
+                localStorage.setItem('openai_api_key', openaiKey);
+            }
+            if (geminiKey) {
+                API_CONFIG.gemini.key = geminiKey;
+                localStorage.setItem('gemini_api_key', geminiKey);
+            }
+            if (grokKey) {
+                API_CONFIG.grok.key = grokKey;
+                localStorage.setItem('grok_api_key', grokKey);
+            }
+            if (murfKey) {
+                API_CONFIG.murf.key = murfKey;
+                localStorage.setItem('murf_api_key', murfKey);
+            }
+            
+            alert(state.lang === 'es' ? '✅ Configuración guardada' : '✅ Configuration saved');
+        }
+
+        async function testAPIConnections() {
+            const resultsDiv = document.getElementById('api-test-results');
+            const statusList = document.getElementById('api-status-list');
+            resultsDiv.classList.remove('hidden');
+            statusList.innerHTML = '<p class="text-sm text-slate-500">Probando conexiones...</p>';
+            
+            const results = [];
+            
+            // Test OpenAI
+            try {
+                const testKey = document.getElementById('config-openai-key').value.trim();
+                if (testKey && testKey !== 'YOUR_OPENAI_KEY') {
+                    const response = await fetch('https://api.openai.com/v1/models', {
+                        headers: { 'Authorization': `Bearer ${testKey}` }
+                    });
+                    results.push({ name: 'OpenAI', success: response.ok, message: response.ok ? 'Conectado' : `Error ${response.status}` });
+                } else {
+                    results.push({ name: 'OpenAI', success: false, message: 'Sin configurar' });
+                }
+            } catch (e) {
+                results.push({ name: 'OpenAI', success: false, message: e.message });
+            }
+            
+            // Test Gemini
+            try {
+                const testKey = document.getElementById('config-gemini-key').value.trim();
+                if (testKey && testKey !== 'YOUR_GEMINI_KEY') {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${testKey}`);
+                    results.push({ name: 'Gemini', success: response.ok, message: response.ok ? 'Conectado' : `Error ${response.status}` });
+                } else {
+                    results.push({ name: 'Gemini', success: false, message: 'Sin configurar' });
+                }
+            } catch (e) {
+                results.push({ name: 'Gemini', success: false, message: e.message });
+            }
+            
+            // Test Grok
+            try {
+                const testKey = document.getElementById('config-grok-key').value.trim();
+                if (testKey && testKey !== 'YOUR_GROK_KEY') {
+                    const response = await fetch('https://api.x.ai/v1/models', {
+                        headers: { 'Authorization': `Bearer ${testKey}` }
+                    });
+                    results.push({ name: 'Grok', success: response.ok, message: response.ok ? 'Conectado' : `Error ${response.status}` });
+                } else {
+                    results.push({ name: 'Grok', success: false, message: 'Sin configurar' });
+                }
+            } catch (e) {
+                results.push({ name: 'Grok', success: false, message: e.message });
+            }
+            
+            // Render results
+            statusList.innerHTML = results.map(r => `
+                <div class="flex items-center justify-between py-2">
+                    <span class="font-bold text-slate-700">${r.name}</span>
+                    <span class="ai-status-indicator ${r.success ? 'success' : 'error'}">${r.success ? '✓' : '✗'} ${r.message}</span>
+                </div>
+            `).join('');
+        }
+
+        // ==================== MAIN APP STATE & VARIABLES ====================
         
         const robiIconUrl = "https://image.pollinations.ai/prompt/cute%203d%20avatar%20young%20female%20teacher%20low%20ponytail%20black%20hair%20black%20glasses%20friendly%20icon%20soft%20lighting?width=150&height=150&nologo=true";
 
@@ -417,6 +863,12 @@
         function playCorrectSound() { document.getElementById('sfx-correct').play().catch(()=>{}); }
         function playWrongSound() { document.getElementById('sfx-wrong').play().catch(()=>{}); }
         
+        // Expose sound functions globally for inline handlers
+        window.playClickSound = playClickSound;
+        window.playWinSound = playWinSound;
+        window.playCorrectSound = playCorrectSound;
+        window.playWrongSound = playWrongSound;
+        
         function toggleMusic() {
             const bg = document.getElementById('bg-music');
             const btn = document.getElementById('music-btn');
@@ -431,6 +883,7 @@
                 btn.style.opacity = "0.5";
             }
         }
+        window.toggleMusic = toggleMusic;
 
         function updateUI() {
             const t = i18n[state.lang];
@@ -631,9 +1084,6 @@
 
         // SIMULATED API RESPONSE (REPLACE WITH SERVERLESS IN PROD)
         async function loadLesson(displayTopic, topicEs, topicEn, imgUrl, isMagicMode) {
-             // En una app real, aquí iría la llamada a tu API de Vercel
-             // Como esto es una demo frontend, simulamos una respuesta "mágica"
-             
              const t = i18n[state.lang];
              
              // Limpiar buscador
@@ -652,33 +1102,215 @@
              document.getElementById('lesson-title').textContent = displayTopic; 
              document.getElementById('lesson-header-bg').style.backgroundImage = `url('${imgUrl}')`;
              
-             // Simular tiempo de carga
-             setTimeout(() => {
-                 const mockData = {
-                     lesson: `¡Hola! Hoy vamos a aprender algo increíble sobre **${displayTopic}**. ¿Sabías que es un tema fascinante? Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo. Imagina que eres un explorador descubriendo secretos antiguos. ¡Sigue leyendo para convertirte en un experto!`,
-                     questions: [
-                         {q: `¿Qué estamos aprendiendo?`, options: ["Nada", displayTopic, "A dormir"], correct: 1},
-                         {q: "Aprender es...", options: ["Aburrido", "Un superpoder", "Malo"], correct: 1},
-                         {q: "¿Qué sigue?", options: ["Investigar más", "Rendirse", "Nada"], correct: 0}
-                     ],
-                     related: ["Ciencia", "Historia", "Arte"]
-                 };
+             // Try AI-powered lesson generation
+             try {
+                 const prompt = state.lang === 'es' 
+                     ? `Crea una lección educativa corta y divertida para niños de 6-10 años sobre "${displayTopic}". 
+                        Incluye: 
+                        1. Una introducción emocionante (2-3 oraciones)
+                        2. 3-4 datos interesantes
+                        3. Una conclusión motivadora
+                        Usa emojis ocasionalmente. Máximo 200 palabras.`
+                     : `Create a short, fun educational lesson for kids ages 6-10 about "${displayTopic}".
+                        Include:
+                        1. An exciting introduction (2-3 sentences)
+                        2. 3-4 interesting facts
+                        3. A motivating conclusion
+                        Use emojis occasionally. Maximum 200 words.`;
                  
-                 renderLessonContent(mockData);
-                 state.currentLesson = { ...mockData, displayTopic, topicEs, topicEn, imgUrl };
-                 // Aquí iría prefetchAudio
-             }, 1500);
+                 const result = await generateText(prompt, state.lang);
+                 
+                 if (result.error) {
+                     // Use fallback content
+                     const fallbackLesson = state.lang === 'es' 
+                         ? `¡Hola! Hoy vamos a aprender algo increíble sobre **${displayTopic}**. 🌟\n\n¿Sabías que este es un tema fascinante? Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo.\n\nImagina que eres un explorador descubriendo secretos antiguos. ¡Sigue leyendo para convertirte en un experto!\n\n💡 **Tip:** Configura tus claves de API en ⚙️ para obtener lecciones personalizadas con IA.`
+                         : `Hello! Today we're going to learn something incredible about **${displayTopic}**. 🌟\n\nDid you know this is a fascinating topic? Experts say that learning about this helps us understand the world better.\n\nImagine you're an explorer discovering ancient secrets. Keep reading to become an expert!\n\n💡 **Tip:** Configure your API keys in ⚙️ to get personalized AI lessons.`;
+                     
+                     const mockData = {
+                         lesson: fallbackLesson,
+                         questions: generateQuestions(displayTopic),
+                         related: ["Ciencia", "Historia", "Arte"],
+                         provider: 'fallback'
+                     };
+                     
+                     renderLessonContent(mockData);
+                     state.currentLesson = { ...mockData, displayTopic, topicEs, topicEn, imgUrl };
+                 } else {
+                     // Use AI-generated content
+                     const aiData = {
+                         lesson: result.text,
+                         questions: generateQuestions(displayTopic),
+                         related: ["Ciencia", "Historia", "Arte"],
+                         provider: result.provider
+                     };
+                     
+                     renderLessonContent(aiData);
+                     state.currentLesson = { ...aiData, displayTopic, topicEs, topicEn, imgUrl };
+                 }
+             } catch (error) {
+                 console.error('Lesson generation error:', error);
+                 // Show error state with retry option
+                 document.getElementById('lesson-loader').classList.add('hidden');
+                 document.getElementById('lesson-error-state').classList.remove('hidden');
+                 document.getElementById('retry-lesson-btn').onclick = () => {
+                     playClickSound();
+                     loadLesson(displayTopic, topicEs, topicEn, imgUrl, isMagicMode);
+                 };
+             }
+        }
+
+        // Generate simple questions based on topic
+        function generateQuestions(topic) {
+            const t = i18n[state.lang];
+            if (state.lang === 'es') {
+                return [
+                    {q: `¿Qué estamos aprendiendo hoy?`, options: ["Nada especial", topic, "A dormir"], correct: 1},
+                    {q: "Aprender cosas nuevas es...", options: ["Aburrido", "¡Un superpoder! 🦸", "Difícil"], correct: 1},
+                    {q: "¿Qué deberías hacer después?", options: ["Investigar más sobre el tema", "Olvidar todo", "Nada"], correct: 0}
+                ];
+            } else {
+                return [
+                    {q: `What are we learning today?`, options: ["Nothing special", topic, "How to sleep"], correct: 1},
+                    {q: "Learning new things is...", options: ["Boring", "A superpower! 🦸", "Hard"], correct: 1},
+                    {q: "What should you do next?", options: ["Research more about the topic", "Forget everything", "Nothing"], correct: 0}
+                ];
+            }
         }
 
         function renderLessonContent(data) {
-            document.getElementById('lesson-loader').classList.add('hidden'); document.getElementById('lesson-content-wrapper').classList.remove('hidden'); document.getElementById('lesson-content').innerHTML = data.lesson;
-            document.getElementById('read-for-me-btn').onclick = () => { playClickSound(); alert("Audio simulado (conecta API real)"); };
+            document.getElementById('lesson-loader').classList.add('hidden'); 
+            document.getElementById('lesson-content-wrapper').classList.remove('hidden'); 
+            document.getElementById('lesson-content').innerHTML = data.lesson.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            
+            // Show provider badge if available
+            if (data.provider && data.provider !== 'fallback') {
+                const providerBadge = document.createElement('div');
+                providerBadge.className = 'text-xs text-slate-400 mt-2';
+                providerBadge.innerHTML = `✨ Generado con ${data.provider.toUpperCase()}`;
+                document.getElementById('lesson-content').appendChild(providerBadge);
+            }
+            
+            // Read for me button with AI voice
+            document.getElementById('read-for-me-btn').onclick = async () => { 
+                playClickSound(); 
+                const btn = document.getElementById('read-for-me-btn');
+                const originalContent = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="text-2xl animate-pulse">🔊</span> <span class="text-lg">Cargando voz...</span>';
+                
+                try {
+                    const textToRead = stripEmojis(data.lesson);
+                    const voiceResult = await generateVoice(textToRead, state.lang);
+                    
+                    if (voiceResult.url) {
+                        // Play OpenAI TTS audio
+                        const audio = new Audio(voiceResult.url);
+                        const player = document.getElementById('sticky-audio-player');
+                        const playerStatus = document.getElementById('player-status');
+                        const playPauseBtn = document.getElementById('player-play-pause');
+                        
+                        player.classList.add('visible');
+                        document.getElementById('assistant-btn').classList.add('move-up');
+                        playerStatus.textContent = state.lang === 'es' ? 'Reproduciendo...' : 'Playing...';
+                        
+                        audio.play();
+                        state.currentAudio = audio;
+                        
+                        playPauseBtn.textContent = '⏸';
+                        playPauseBtn.onclick = () => {
+                            if (audio.paused) {
+                                audio.play();
+                                playPauseBtn.textContent = '⏸';
+                            } else {
+                                audio.pause();
+                                playPauseBtn.textContent = '▶';
+                            }
+                        };
+                        
+                        document.getElementById('player-close').onclick = () => {
+                            audio.pause();
+                            player.classList.remove('visible');
+                            document.getElementById('assistant-btn').classList.remove('move-up');
+                            URL.revokeObjectURL(voiceResult.url);
+                        };
+                        
+                        audio.onended = () => {
+                            playerStatus.textContent = state.lang === 'es' ? '¡Terminado!' : 'Finished!';
+                            playPauseBtn.textContent = '▶';
+                        };
+                    } else if (voiceResult.provider === 'native') {
+                        // Native TTS is speaking
+                        const player = document.getElementById('sticky-audio-player');
+                        player.classList.add('visible');
+                        document.getElementById('player-status').textContent = state.lang === 'es' ? 'Voz del navegador...' : 'Browser voice...';
+                        document.getElementById('assistant-btn').classList.add('move-up');
+                        
+                        document.getElementById('player-close').onclick = () => {
+                            stopSpeaking();
+                            player.classList.remove('visible');
+                            document.getElementById('assistant-btn').classList.remove('move-up');
+                        };
+                    }
+                } catch (error) {
+                    console.error('Voice error:', error);
+                    // Fallback to native
+                    speakNative(stripEmojis(data.lesson), state.lang);
+                }
+                
+                btn.disabled = false;
+                btn.innerHTML = originalContent;
+            };
             
             const qList = document.getElementById('lesson-questions-list'); qList.innerHTML = '';
-            if(data.questions) { data.questions.forEach((item, idx) => { const qContainer = document.createElement('div'); qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; let optionsHtml = ''; item.options.forEach((opt, optIdx) => { optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${opt}')">${opt}</div>`; }); qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; qList.appendChild(qContainer); }); }
+            if(data.questions) { 
+                data.questions.forEach((item, idx) => { 
+                    const qContainer = document.createElement('div'); 
+                    qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; 
+                    let optionsHtml = ''; 
+                    item.options.forEach((opt, optIdx) => { 
+                        const escapedOpt = opt.replace(/'/g, "\\'");
+                        optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${escapedOpt}')">${opt}</div>`; 
+                    }); 
+                    qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl" onclick="speakNative('${item.q.replace(/'/g, "\\'")}', '${state.lang}')">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; 
+                    qList.appendChild(qContainer); 
+                }); 
+            }
         }
         
         document.getElementById('generate-button').onclick = () => { if(state.currentLesson) loadLesson(state.currentLesson.displayTopic, state.currentLesson.topicEs, state.currentLesson.topicEn, state.currentLesson.imgUrl, true); };
+        
+        // AI Image Generation Button
+        document.getElementById('generate-image-btn').onclick = async () => { 
+            if(!state.currentLesson) return;
+            
+            const btn = document.getElementById('generate-image-btn');
+            const container = document.getElementById('ai-generated-image-container');
+            const img = document.getElementById('ai-generated-image');
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="animate-pulse">🎨</span> <span>Generando...</span>';
+            
+            try {
+                const prompt = state.currentLesson.displayTopic;
+                const result = await generateImage(prompt, state.lang);
+                
+                if (result.url) {
+                    img.src = result.url;
+                    img.alt = `AI illustration of ${prompt}`;
+                    container.classList.remove('hidden');
+                    playWinSound();
+                    confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
+                } else if (result.error) {
+                    alert(result.message || (state.lang === 'es' ? 'Error al generar imagen' : 'Error generating image'));
+                }
+            } catch (error) {
+                console.error('Image generation error:', error);
+                alert(state.lang === 'es' ? 'Error al generar imagen. Verifica tu clave de OpenAI.' : 'Error generating image. Check your OpenAI key.');
+            }
+            
+            btn.disabled = false;
+            btn.innerHTML = '🎨 <span>Generar Imagen AI</span>';
+        };
         
         window.checkLessonAnswer = function(el, isCorrect, text) { const t = i18n[state.lang]; if(el.classList.contains('correct') || el.classList.contains('wrong')) return; if(isCorrect) { el.classList.add('correct'); playCorrectSound(); confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } }); } else { el.classList.add('wrong'); playWrongSound(); } };
 
@@ -724,6 +1356,18 @@
         document.addEventListener('DOMContentLoaded', () => {
             const langToggleMain = document.getElementById('lang-toggle'); if (langToggleMain) langToggleMain.onclick = toggleLangIntro; 
             const langToggleIntro = document.getElementById('lang-toggle-intro'); if (langToggleIntro) langToggleIntro.onclick = toggleLangIntro;
+            
+            // Config modal event listeners
+            document.getElementById('close-config').onclick = () => { playClickSound(); closeConfigModal(); };
+            document.getElementById('save-config-btn').onclick = () => { playClickSound(); saveAPIConfig(); };
+            document.getElementById('test-config-btn').onclick = () => { playClickSound(); testAPIConnections(); };
+            document.getElementById('config-overlay').onclick = (e) => { if (e.target.id === 'config-overlay') closeConfigModal(); };
+            
+            // Initialize speech synthesis voices
+            if ('speechSynthesis' in window) {
+                speechSynthesis.getVoices();
+                speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+            }
             
             setTimeout(() => { startApp(); }, 500); 
             
@@ -774,6 +1418,27 @@
                 e.target.classList.add('text-blue-600','border-blue-600'); document.getElementById('subtab-explore').classList.remove('text-blue-600','border-blue-600'); document.getElementById('subtab-branches').classList.remove('text-blue-600','border-blue-600'); renderHistory(); 
             };
         });
+        
+        // Expose functions globally for inline event handlers
+        window.speakNative = speakNative;
+        window.stopSpeaking = stopSpeaking;
+        window.generateText = generateText;
+        window.generateImage = generateImage;
+        window.generateVoice = generateVoice;
+        
+        // Legacy speak function for compatibility with existing onclick handlers
+        window.speak = async function(text) {
+            if (!text) return;
+            try {
+                const result = await generateVoice(text, state.lang);
+                if (result.url) {
+                    const audio = new Audio(result.url);
+                    audio.play();
+                }
+            } catch (error) {
+                speakNative(text, state.lang);
+            }
+        };
     </script>
 </body>
 </html>
