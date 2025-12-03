@@ -121,7 +121,7 @@
     <div id="app-container" class="max-w-6xl mx-auto p-4 md:p-8 opacity-0 transition-opacity duration-500 relative z-10" style="display:none;">
         <nav class="px-4 py-3 shadow-sm fixed top-0 left-0 right-0 max-w-6xl mx-auto" style="max-width: 100%; backdrop-filter: none; background: #f0f9ff;">
              <div class="max-w-6xl mx-auto flex items-center justify-between">
-                <button id="menu-btn" class="flex items-center gap-3 active:scale-95 transition cursor-pointer" onclick="playClickSound()">
+                <button id="menu-btn" class="flex items-center gap-3 active:scale-95 transition cursor-pointer" onclick="playClickSound(); document.getElementById('side-menu-overlay').classList.add('open')">
                     <div class="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl flex items-center justify-center text-2xl shadow-lg shadow-blue-500/20 text-white font-bold transform -rotate-3 border-2 border-white">M</div>
                     <div class="text-left">
                         <h1 id="app-title-display" class="text-xl font-bold text-slate-800 leading-tight fun-font" data-i18n="appTitle">Mundo [NAME]</h1>
@@ -132,7 +132,6 @@
                     </div>
                 </button>
                 <div class="flex gap-3 items-center">
-                    <button id="settings-btn" class="settings-btn" onclick="openSettingsModal(); playClickSound()" title="API Settings">⚙️</button>
                     <button id="music-btn" class="text-xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="toggleMusic()">🎵</button>
                     <button id="home-btn" class="text-2xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="playClickSound()">🏠</button>
                     <button id="lang-toggle" class="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 active:scale-95 cursor-pointer relative z-30" onclick="playClickSound()">
@@ -324,8 +323,8 @@
             <p class="text-sm font-bold text-slate-800 truncate" id="player-status" data-i18n="loadingVoice">Cargando voz...</p>
         </div>
         <div class="flex items-center gap-3">
-            <button id="player-play-pause" class="w-12 h-12 rounded-full bg-slate-900 text-white font-bold text-xl active:bg-slate-700 shadow-md transition-all flex items-center justify-center cursor-pointer" onclick="playClickSound()">⏸</button>
-            <button id="player-close" class="w-10 h-10 rounded-full bg-slate-100 text-slate-400 active:bg-red-100 active:text-red-500 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer" onclick="playClickSound()">✕</button>
+            <button id="player-play-pause" class="w-12 h-12 rounded-full bg-slate-900 text-white font-bold text-xl active:bg-slate-700 shadow-md transition-all flex items-center justify-center cursor-pointer" onclick="playClickSound(); togglePlayerPlayPause()">⏸</button>
+            <button id="player-close" class="w-10 h-10 rounded-full bg-slate-100 text-slate-400 active:bg-red-100 active:text-red-500 font-bold text-sm flex items-center justify-center transition-colors cursor-pointer" onclick="playClickSound(); closeAudioPlayer()">✕</button>
         </div>
     </div>
 
@@ -665,6 +664,9 @@
         // Browser TTS fallback function
         function speakWithBrowserTTS(text, language = 'es') {
             if ('speechSynthesis' in window) {
+                // Stop any ongoing speech
+                speechSynthesis.cancel();
+                
                 const utterance = new SpeechSynthesisUtterance(stripEmojis(text));
                 utterance.lang = language === 'es' ? 'es-MX' : 'en-US';
                 utterance.rate = 0.9;
@@ -682,11 +684,88 @@
                     utterance.voice = femaleVoice;
                 }
                 
+                // Show player and update state
+                utterance.onstart = () => {
+                    state.isPlaying = true;
+                    showAudioPlayer();
+                    updatePlayPauseButton();
+                };
+                
+                utterance.onend = () => {
+                    state.isPlaying = false;
+                    updatePlayPauseButton();
+                };
+                
+                utterance.onerror = () => {
+                    state.isPlaying = false;
+                    hideAudioPlayer();
+                };
+                
                 speechSynthesis.speak(utterance);
                 return true;
             }
             return false;
         }
+        
+        // Show the sticky audio player
+        function showAudioPlayer() {
+            const player = document.getElementById('sticky-audio-player');
+            const assistantBtn = document.getElementById('assistant-btn');
+            if (player) player.classList.add('visible');
+            if (assistantBtn) assistantBtn.classList.add('move-up');
+        }
+        
+        // Hide the sticky audio player
+        function hideAudioPlayer() {
+            const player = document.getElementById('sticky-audio-player');
+            const assistantBtn = document.getElementById('assistant-btn');
+            if (player) player.classList.remove('visible');
+            if (assistantBtn) assistantBtn.classList.remove('move-up');
+            state.isPlaying = false;
+        }
+        
+        // Update play/pause button state
+        function updatePlayPauseButton() {
+            const btn = document.getElementById('player-play-pause');
+            if (btn) {
+                btn.textContent = state.isPlaying ? '⏸' : '▶';
+            }
+        }
+        
+        // Toggle play/pause for TTS
+        function togglePlayerPlayPause() {
+            if ('speechSynthesis' in window) {
+                if (speechSynthesis.speaking && !speechSynthesis.paused) {
+                    speechSynthesis.pause();
+                    state.isPlaying = false;
+                } else if (speechSynthesis.paused) {
+                    speechSynthesis.resume();
+                    state.isPlaying = true;
+                } else if (!speechSynthesis.speaking && state.currentText) {
+                    // Speech has ended, replay the current text
+                    speakWithBrowserTTS(state.currentText, state.lang);
+                }
+                updatePlayPauseButton();
+            }
+        }
+        
+        // Stop and close audio player
+        function closeAudioPlayer() {
+            if ('speechSynthesis' in window) {
+                speechSynthesis.cancel();
+            }
+            if (state.audioSource) {
+                state.audioSource.pause();
+                state.audioSource = null;
+            }
+            hideAudioPlayer();
+        }
+        
+        // Expose audio player functions globally
+        window.togglePlayerPlayPause = togglePlayerPlayPause;
+        window.closeAudioPlayer = closeAudioPlayer;
+        window.showAudioPlayer = showAudioPlayer;
+        window.hideAudioPlayer = hideAudioPlayer;
 
         // Main speak function that handles all voice scenarios
         async function speak(text) {
