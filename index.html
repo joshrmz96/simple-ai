@@ -60,6 +60,13 @@
         .read-for-me-btn { background: linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 100%); border: 2px solid #bae6fd; color: #0284c7; padding: 12px 20px; border-radius: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; cursor: pointer; margin-bottom: 24px; transition: all 0.2s; box-shadow: 0 4px 0 #bae6fd; }
         .read-for-me-btn:active { transform: translateY(2px); box-shadow: none; }
         .read-for-me-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        /* Settings Modal Styles */
+        .settings-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 6000; opacity: 0; visibility: hidden; transition: all 0.3s; backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .settings-modal-overlay.open { opacity: 1; visibility: visible; }
+        .settings-modal { width: 100%; max-width: 420px; background: white; border-radius: 24px; overflow: hidden; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); transform: scale(0.95); transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        .settings-modal-overlay.open .settings-modal { transform: scale(1); }
+        .settings-btn { background: white; border: 2px solid #e2e8f0; width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; cursor: pointer; transition: all 0.2s; }
+        .settings-btn:active { background: #f1f5f9; transform: scale(0.95); }
     </style>
 </head>
 <body class="no-select">
@@ -125,6 +132,7 @@
                     </div>
                 </button>
                 <div class="flex gap-3 items-center">
+                    <button id="settings-btn" class="settings-btn" onclick="openSettingsModal(); playClickSound()" title="API Settings">⚙️</button>
                     <button id="music-btn" class="text-xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="toggleMusic()">🎵</button>
                     <button id="home-btn" class="text-2xl bg-white p-2 rounded-full border border-slate-200 shadow-sm active:bg-blue-50 transition cursor-pointer" onclick="playClickSound()">🏠</button>
                     <button id="lang-toggle" class="flex items-center gap-2 px-3 py-2 rounded-full bg-white border border-slate-200 active:scale-95 cursor-pointer relative z-30" onclick="playClickSound()">
@@ -355,7 +363,430 @@
         </div>
     </div>
 
+    <!-- SETTINGS MODAL FOR API KEYS -->
+    <div id="settings-modal-overlay" class="settings-modal-overlay">
+        <div class="settings-modal">
+            <div class="bg-gradient-to-r from-purple-600 to-indigo-600 p-4 text-white flex justify-between items-center">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">⚙️</span>
+                    <h3 class="font-bold text-lg fun-font" id="settings-title">Configuración API</h3>
+                </div>
+                <button onclick="closeSettingsModal(); playClickSound()" class="text-white/70 active:text-white active:bg-white/20 rounded-full w-10 h-10 flex items-center justify-center text-2xl transition cursor-pointer">✕</button>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+                <p class="text-sm text-slate-500 mb-4" id="settings-desc">Ingresa tus claves API para habilitar las funciones de IA. Las claves se guardan localmente en tu navegador.</p>
+                
+                <!-- OpenAI -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-bold text-slate-700">🤖 OpenAI (ChatGPT) - Prioridad 1</label>
+                    <input type="password" id="input-openai-key" class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-blue-400 outline-none text-slate-700 text-sm" placeholder="sk-...">
+                </div>
+
+                <!-- Gemini -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-bold text-slate-700">✨ Google Gemini - Prioridad 2</label>
+                    <input type="password" id="input-gemini-key" class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-blue-400 outline-none text-slate-700 text-sm" placeholder="AIza...">
+                </div>
+
+                <!-- Grok -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-bold text-slate-700">🚀 Grok (xAI) - Prioridad 3</label>
+                    <input type="password" id="input-grok-key" class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-blue-400 outline-none text-slate-700 text-sm" placeholder="xai-...">
+                </div>
+
+                <!-- Murf.ai -->
+                <div class="space-y-2">
+                    <label class="block text-sm font-bold text-slate-700">🗣️ Murf.ai (Voz/TTS)</label>
+                    <input type="password" id="input-murf-key" class="w-full p-3 rounded-xl border-2 border-slate-200 focus:border-blue-400 outline-none text-slate-700 text-sm" placeholder="murf_...">
+                    <p class="text-xs text-slate-400">Voces femeninas: Español (México) y Inglés (EE.UU.)</p>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100">
+                    <button onclick="saveSettings(); playClickSound()" class="btn-fun w-full py-3">
+                        💾 Guardar Configuración
+                    </button>
+                </div>
+
+                <div class="text-center">
+                    <p class="text-xs text-slate-400 mt-4">🔒 Tus claves se guardan solo en este dispositivo</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script type="module">
+        // =====================================================
+        // API CONFIGURATION - PLUG IN YOUR API KEYS HERE
+        // DO NOT HARDCODE REAL KEYS - Use placeholders or settings modal
+        // =====================================================
+        const API_CONFIG = {
+            // OpenAI (ChatGPT) - Priority 1
+            openai: {
+                apiKey: localStorage.getItem('openai_api_key') || 'YOUR_OPENAI_API_KEY',
+                endpoint: 'https://api.openai.com/v1/chat/completions',
+                model: 'gpt-3.5-turbo'
+            },
+            // Google Gemini - Priority 2
+            gemini: {
+                apiKey: localStorage.getItem('gemini_api_key') || 'YOUR_GEMINI_API_KEY',
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+            },
+            // Grok (xAI) - Priority 3
+            grok: {
+                apiKey: localStorage.getItem('grok_api_key') || 'YOUR_GROK_API_KEY',
+                endpoint: 'https://api.x.ai/v1/chat/completions',
+                model: 'grok-beta'
+            },
+            // Murf.ai - Voice/TTS
+            murf: {
+                apiKey: localStorage.getItem('murf_api_key') || 'YOUR_MURF_API_KEY',
+                endpoint: 'https://api.murf.ai/v1/speech/generate'
+            }
+        };
+
+        // Voice settings for Murf.ai - Female voices
+        const VOICE_SETTINGS = {
+            es: {
+                // Spanish (Mexico) - Female voice
+                voiceId: 'es-MX-DaliaNeural', // Murf.ai female voice for Spanish MX
+                language: 'es-MX',
+                gender: 'female'
+            },
+            en: {
+                // English (United States) - Female voice
+                voiceId: 'en-US-JennyNeural', // Murf.ai female voice for English US
+                language: 'en-US',
+                gender: 'female'
+            }
+        };
+
+        // =====================================================
+        // API INTEGRATION FUNCTIONS WITH FALLBACK LOGIC
+        // Priority: ChatGPT → Gemini → Grok
+        // =====================================================
+
+        // Check if an API key is configured (not placeholder)
+        function isApiKeyConfigured(key) {
+            return key && !key.startsWith('YOUR_') && key.trim() !== '';
+        }
+
+        // OpenAI (ChatGPT) API call
+        async function callOpenAI(prompt, systemPrompt = '') {
+            if (!isApiKeyConfigured(API_CONFIG.openai.apiKey)) {
+                throw new Error('OpenAI API key not configured');
+            }
+            
+            const messages = [];
+            if (systemPrompt) {
+                messages.push({ role: 'system', content: systemPrompt });
+            }
+            messages.push({ role: 'user', content: prompt });
+
+            const response = await fetch(API_CONFIG.openai.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.openai.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: API_CONFIG.openai.model,
+                    messages: messages,
+                    max_tokens: 1500,
+                    temperature: 0.7
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`OpenAI API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content;
+        }
+
+        // Google Gemini API call
+        async function callGemini(prompt, systemPrompt = '') {
+            if (!isApiKeyConfigured(API_CONFIG.gemini.apiKey)) {
+                throw new Error('Gemini API key not configured');
+            }
+
+            const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${prompt}` : prompt;
+            const url = `${API_CONFIG.gemini.endpoint}?key=${API_CONFIG.gemini.apiKey}`;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ text: fullPrompt }]
+                    }],
+                    generationConfig: {
+                        maxOutputTokens: 1500,
+                        temperature: 0.7
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Gemini API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        // Grok (xAI) API call
+        async function callGrok(prompt, systemPrompt = '') {
+            if (!isApiKeyConfigured(API_CONFIG.grok.apiKey)) {
+                throw new Error('Grok API key not configured');
+            }
+
+            const messages = [];
+            if (systemPrompt) {
+                messages.push({ role: 'system', content: systemPrompt });
+            }
+            messages.push({ role: 'user', content: prompt });
+
+            const response = await fetch(API_CONFIG.grok.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.grok.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: API_CONFIG.grok.model,
+                    messages: messages,
+                    max_tokens: 1500,
+                    temperature: 0.7
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Grok API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0].message.content;
+        }
+
+        // Main text generation function with fallback logic
+        // Priority: ChatGPT → Gemini → Grok
+        async function generateText(prompt, systemPrompt = '') {
+            const providers = [
+                { name: 'OpenAI', fn: callOpenAI },
+                { name: 'Gemini', fn: callGemini },
+                { name: 'Grok', fn: callGrok }
+            ];
+
+            let lastError = null;
+
+            for (const provider of providers) {
+                try {
+                    console.log(`Trying ${provider.name}...`);
+                    const result = await provider.fn(prompt, systemPrompt);
+                    console.log(`${provider.name} succeeded`);
+                    return { text: result, provider: provider.name };
+                } catch (error) {
+                    console.log(`${provider.name} failed:`, error.message);
+                    lastError = error;
+                    // Continue to next provider
+                }
+            }
+
+            // All providers failed - return a graceful fallback message
+            console.log('All AI providers failed, using fallback response');
+            return {
+                text: getFallbackResponse(prompt),
+                provider: 'fallback'
+            };
+        }
+
+        // Fallback response when all APIs fail
+        function getFallbackResponse(prompt) {
+            const lang = state.lang || 'es';
+            if (lang === 'es') {
+                return `¡Hola! Parece que los servicios de IA no están disponibles en este momento. Por favor, configura tus claves de API en el menú de ajustes (⚙️) para disfrutar de contenido personalizado. Mientras tanto, ¡sigue explorando los temas disponibles!`;
+            }
+            return `Hi! It seems the AI services are not available right now. Please configure your API keys in the settings menu (⚙️) to enjoy personalized content. In the meantime, keep exploring the available topics!`;
+        }
+
+        // =====================================================
+        // MURF.AI VOICE/TTS INTEGRATION
+        // Female voices for Spanish (MX) and English (US)
+        // =====================================================
+
+        async function generateVoiceWithMurf(text, language = 'es') {
+            if (!isApiKeyConfigured(API_CONFIG.murf.apiKey)) {
+                throw new Error('Murf.ai API key not configured');
+            }
+
+            const voiceSettings = VOICE_SETTINGS[language] || VOICE_SETTINGS.es;
+            const cleanText = stripEmojis(text);
+
+            const response = await fetch(API_CONFIG.murf.endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'api-key': API_CONFIG.murf.apiKey
+                },
+                body: JSON.stringify({
+                    voiceId: voiceSettings.voiceId,
+                    text: cleanText,
+                    format: 'MP3',
+                    sampleRate: 24000,
+                    style: 'Conversational'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Murf.ai API error: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.audioFile; // URL or base64 audio
+        }
+
+        // Voice generation with fallback to browser TTS
+        async function generateVoice(text, language = 'es') {
+            try {
+                // Try Murf.ai first
+                const audioUrl = await generateVoiceWithMurf(text, language);
+                return { audioUrl, provider: 'murf' };
+            } catch (error) {
+                console.log('Murf.ai voice failed, falling back to browser TTS:', error.message);
+                // Fallback to browser's built-in speech synthesis
+                return { useBrowserTTS: true, text, language, provider: 'browser' };
+            }
+        }
+
+        // Browser TTS fallback function
+        function speakWithBrowserTTS(text, language = 'es') {
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(stripEmojis(text));
+                utterance.lang = language === 'es' ? 'es-MX' : 'en-US';
+                utterance.rate = 0.9;
+                utterance.pitch = 1.1; // Slightly higher pitch for female-like voice
+                
+                // Try to find a female voice
+                const voices = speechSynthesis.getVoices();
+                const femaleVoice = voices.find(v => 
+                    v.lang.startsWith(language) && 
+                    (v.name.toLowerCase().includes('female') || 
+                     v.name.toLowerCase().includes('mujer') ||
+                     v.name.toLowerCase().includes('woman'))
+                );
+                if (femaleVoice) {
+                    utterance.voice = femaleVoice;
+                }
+                
+                speechSynthesis.speak(utterance);
+                return true;
+            }
+            return false;
+        }
+
+        // Main speak function that handles all voice scenarios
+        async function speak(text) {
+            if (!text || text.trim() === '') return;
+            
+            const language = state.lang || 'es';
+            
+            try {
+                const result = await generateVoice(text, language);
+                
+                if (result.useBrowserTTS) {
+                    // Use browser TTS as fallback
+                    speakWithBrowserTTS(result.text, result.language);
+                    updatePlayerStatus(i18n[state.lang].voiceBasic || 'Basic voice...');
+                } else if (result.audioUrl) {
+                    // Play Murf.ai audio
+                    playAudioFromUrl(result.audioUrl);
+                    updatePlayerStatus('Murf.ai');
+                }
+            } catch (error) {
+                console.log('Voice generation failed completely:', error);
+                // Silent fail - no error shown to user
+                speakWithBrowserTTS(text, language);
+            }
+        }
+
+        // Helper to play audio from URL
+        function playAudioFromUrl(url) {
+            const audio = new Audio(url);
+            audio.play().catch(err => {
+                console.log('Audio playback failed:', err);
+                // Fallback to browser TTS on playback error
+                if (state.currentText) {
+                    speakWithBrowserTTS(state.currentText, state.lang);
+                }
+            });
+        }
+
+        // Update player status display
+        function updatePlayerStatus(status) {
+            const playerStatus = document.getElementById('player-status');
+            if (playerStatus) {
+                playerStatus.textContent = status;
+            }
+        }
+
+        // =====================================================
+        // SETTINGS MODAL FOR API KEYS
+        // =====================================================
+
+        function saveApiKeys(openai, gemini, grok, murf) {
+            if (openai) localStorage.setItem('openai_api_key', openai);
+            if (gemini) localStorage.setItem('gemini_api_key', gemini);
+            if (grok) localStorage.setItem('grok_api_key', grok);
+            if (murf) localStorage.setItem('murf_api_key', murf);
+            
+            // Update API_CONFIG
+            API_CONFIG.openai.apiKey = openai || API_CONFIG.openai.apiKey;
+            API_CONFIG.gemini.apiKey = gemini || API_CONFIG.gemini.apiKey;
+            API_CONFIG.grok.apiKey = grok || API_CONFIG.grok.apiKey;
+            API_CONFIG.murf.apiKey = murf || API_CONFIG.murf.apiKey;
+        }
+
+        function openSettingsModal() {
+            document.getElementById('settings-modal-overlay').classList.add('open');
+            // Load current values
+            document.getElementById('input-openai-key').value = 
+                isApiKeyConfigured(API_CONFIG.openai.apiKey) ? API_CONFIG.openai.apiKey : '';
+            document.getElementById('input-gemini-key').value = 
+                isApiKeyConfigured(API_CONFIG.gemini.apiKey) ? API_CONFIG.gemini.apiKey : '';
+            document.getElementById('input-grok-key').value = 
+                isApiKeyConfigured(API_CONFIG.grok.apiKey) ? API_CONFIG.grok.apiKey : '';
+            document.getElementById('input-murf-key').value = 
+                isApiKeyConfigured(API_CONFIG.murf.apiKey) ? API_CONFIG.murf.apiKey : '';
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal-overlay').classList.remove('open');
+        }
+
+        function saveSettings() {
+            const openai = document.getElementById('input-openai-key').value.trim();
+            const gemini = document.getElementById('input-gemini-key').value.trim();
+            const grok = document.getElementById('input-grok-key').value.trim();
+            const murf = document.getElementById('input-murf-key').value.trim();
+            
+            saveApiKeys(openai, gemini, grok, murf);
+            closeSettingsModal();
+            
+            // Show confirmation
+            const confirmMsg = state.lang === 'es' ? '¡Configuración guardada!' : 'Settings saved!';
+            alert(confirmMsg);
+        }
+
+        // Expose functions globally
+        window.speak = speak;
+        window.generateText = generateText;
+        window.openSettingsModal = openSettingsModal;
+        window.closeSettingsModal = closeSettingsModal;
+        window.saveSettings = saveSettings;
+
         // APIS - AQUI ES DONDE OCURRE LA MAGIA
         // IMPORTANTE: EL PROXY ES SOLO PARA DEMOSTRACIÓN. EN PRODUCCION USA SERVERLESS
         
@@ -417,6 +848,12 @@
         function playCorrectSound() { document.getElementById('sfx-correct').play().catch(()=>{}); }
         function playWrongSound() { document.getElementById('sfx-wrong').play().catch(()=>{}); }
         
+        // Expose sound functions globally for onclick handlers
+        window.playClickSound = playClickSound;
+        window.playWinSound = playWinSound;
+        window.playCorrectSound = playCorrectSound;
+        window.playWrongSound = playWrongSound;
+        
         function toggleMusic() {
             const bg = document.getElementById('bg-music');
             const btn = document.getElementById('music-btn');
@@ -431,6 +868,9 @@
                 btn.style.opacity = "0.5";
             }
         }
+        
+        // Expose toggleMusic globally
+        window.toggleMusic = toggleMusic;
 
         function updateUI() {
             const t = i18n[state.lang];
@@ -629,11 +1069,8 @@
             }
         }
 
-        // SIMULATED API RESPONSE (REPLACE WITH SERVERLESS IN PROD)
+        // LESSON GENERATION WITH AI API FALLBACK
         async function loadLesson(displayTopic, topicEs, topicEn, imgUrl, isMagicMode) {
-             // En una app real, aquí iría la llamada a tu API de Vercel
-             // Como esto es una demo frontend, simulamos una respuesta "mágica"
-             
              const t = i18n[state.lang];
              
              // Limpiar buscador
@@ -652,30 +1089,145 @@
              document.getElementById('lesson-title').textContent = displayTopic; 
              document.getElementById('lesson-header-bg').style.backgroundImage = `url('${imgUrl}')`;
              
-             // Simular tiempo de carga
-             setTimeout(() => {
-                 const mockData = {
-                     lesson: `¡Hola! Hoy vamos a aprender algo increíble sobre **${displayTopic}**. ¿Sabías que es un tema fascinante? Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo. Imagina que eres un explorador descubriendo secretos antiguos. ¡Sigue leyendo para convertirte en un experto!`,
-                     questions: [
-                         {q: `¿Qué estamos aprendiendo?`, options: ["Nada", displayTopic, "A dormir"], correct: 1},
-                         {q: "Aprender es...", options: ["Aburrido", "Un superpoder", "Malo"], correct: 1},
-                         {q: "¿Qué sigue?", options: ["Investigar más", "Rendirse", "Nada"], correct: 0}
-                     ],
-                     related: ["Ciencia", "Historia", "Arte"]
-                 };
+             // Build the prompt for AI
+             const systemPrompt = state.lang === 'es' 
+                 ? `Eres un tutor educativo amigable para niños. Explica los temas de manera simple, divertida y educativa. Usa emojis ocasionalmente. Responde siempre en español.`
+                 : `You are a friendly educational tutor for kids. Explain topics in a simple, fun, and educational way. Use emojis occasionally. Always respond in English.`;
+             
+             const userPrompt = state.lang === 'es'
+                 ? `Crea una lección corta y divertida sobre "${displayTopic}" para niños. Incluye:
+                    1. Una explicación de 3-4 párrafos
+                    2. 3 preguntas de opción múltiple con 3 opciones cada una
+                    
+                    Responde en formato JSON así:
+                    {
+                        "lesson": "texto de la lección aquí",
+                        "questions": [
+                            {"q": "pregunta 1", "options": ["opción a", "opción b", "opción c"], "correct": 0},
+                            {"q": "pregunta 2", "options": ["opción a", "opción b", "opción c"], "correct": 1},
+                            {"q": "pregunta 3", "options": ["opción a", "opción b", "opción c"], "correct": 2}
+                        ]
+                    }`
+                 : `Create a short and fun lesson about "${displayTopic}" for kids. Include:
+                    1. An explanation of 3-4 paragraphs
+                    2. 3 multiple choice questions with 3 options each
+                    
+                    Respond in JSON format like this:
+                    {
+                        "lesson": "lesson text here",
+                        "questions": [
+                            {"q": "question 1", "options": ["option a", "option b", "option c"], "correct": 0},
+                            {"q": "question 2", "options": ["option a", "option b", "option c"], "correct": 1},
+                            {"q": "question 3", "options": ["option a", "option b", "option c"], "correct": 2}
+                        ]
+                    }`;
+
+             try {
+                 // Use the fallback-enabled generateText function
+                 const result = await generateText(userPrompt, systemPrompt);
                  
+                 let lessonData;
+                 
+                 if (result.provider === 'fallback') {
+                     // Use mock data when all APIs fail
+                     lessonData = getMockLessonData(displayTopic);
+                 } else {
+                     // Try to parse AI response as JSON
+                     try {
+                         // Extract JSON from response (handle markdown code blocks)
+                         let jsonText = result.text;
+                         const jsonMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/);
+                         if (jsonMatch) {
+                             jsonText = jsonMatch[1];
+                         } else {
+                             // Try to find JSON object in text
+                             const objMatch = jsonText.match(/\{[\s\S]*\}/);
+                             if (objMatch) {
+                                 jsonText = objMatch[0];
+                             }
+                         }
+                         lessonData = JSON.parse(jsonText);
+                     } catch (parseError) {
+                         console.log('JSON parse error, using text as lesson:', parseError);
+                         lessonData = {
+                             lesson: result.text,
+                             questions: getMockQuestions(displayTopic)
+                         };
+                     }
+                 }
+                 
+                 renderLessonContent(lessonData);
+                 state.currentLesson = { ...lessonData, displayTopic, topicEs, topicEn, imgUrl };
+                 state.currentText = lessonData.lesson; // Store for TTS
+                 
+             } catch (error) {
+                 console.log('Lesson generation error:', error);
+                 // Use mock data as final fallback - no error shown to user
+                 const mockData = getMockLessonData(displayTopic);
                  renderLessonContent(mockData);
                  state.currentLesson = { ...mockData, displayTopic, topicEs, topicEn, imgUrl };
-                 // Aquí iría prefetchAudio
-             }, 1500);
+                 state.currentText = mockData.lesson;
+             }
+        }
+
+        // Mock data when all APIs fail
+        function getMockLessonData(displayTopic) {
+            const lang = state.lang || 'es';
+            if (lang === 'es') {
+                return {
+                    lesson: `¡Hola! Hoy vamos a aprender algo increíble sobre **${displayTopic}**. 🌟\n\n¿Sabías que este es un tema fascinante? Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo que nos rodea.\n\nImagina que eres un explorador descubriendo secretos antiguos. Cada cosa nueva que aprendes es como encontrar un tesoro. 🏆\n\n¡Sigue explorando para convertirte en un experto! Puedes configurar tus claves de API en el menú de ajustes (⚙️) para obtener lecciones personalizadas.`,
+                    questions: getMockQuestions(displayTopic)
+                };
+            }
+            return {
+                lesson: `Hello! Today we're going to learn something amazing about **${displayTopic}**. 🌟\n\nDid you know this is a fascinating topic? Experts say that learning about this helps us understand the world around us better.\n\nImagine you're an explorer discovering ancient secrets. Every new thing you learn is like finding treasure. 🏆\n\nKeep exploring to become an expert! You can configure your API keys in the settings menu (⚙️) to get personalized lessons.`,
+                questions: getMockQuestions(displayTopic)
+            };
+        }
+
+        function getMockQuestions(displayTopic) {
+            const lang = state.lang || 'es';
+            if (lang === 'es') {
+                return [
+                    {q: `¿Qué estamos aprendiendo hoy?`, options: ["Nada importante", displayTopic, "A dormir"], correct: 1},
+                    {q: "Aprender cosas nuevas es...", options: ["Aburrido", "¡Un superpoder!", "Malo"], correct: 1},
+                    {q: "¿Qué deberíamos hacer después?", options: ["Investigar más", "Rendirse", "Nada"], correct: 0}
+                ];
+            }
+            return [
+                {q: `What are we learning today?`, options: ["Nothing important", displayTopic, "To sleep"], correct: 1},
+                {q: "Learning new things is...", options: ["Boring", "A superpower!", "Bad"], correct: 1},
+                {q: "What should we do next?", options: ["Research more", "Give up", "Nothing"], correct: 0}
+            ];
         }
 
         function renderLessonContent(data) {
-            document.getElementById('lesson-loader').classList.add('hidden'); document.getElementById('lesson-content-wrapper').classList.remove('hidden'); document.getElementById('lesson-content').innerHTML = data.lesson;
-            document.getElementById('read-for-me-btn').onclick = () => { playClickSound(); alert("Audio simulado (conecta API real)"); };
+            document.getElementById('lesson-loader').classList.add('hidden'); 
+            document.getElementById('lesson-content-wrapper').classList.remove('hidden'); 
+            document.getElementById('lesson-content').innerHTML = data.lesson;
+            
+            // Set up Read For Me button with TTS
+            document.getElementById('read-for-me-btn').onclick = async () => { 
+                playClickSound(); 
+                const lessonText = data.lesson;
+                await speak(lessonText);
+            };
             
             const qList = document.getElementById('lesson-questions-list'); qList.innerHTML = '';
-            if(data.questions) { data.questions.forEach((item, idx) => { const qContainer = document.createElement('div'); qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; let optionsHtml = ''; item.options.forEach((opt, optIdx) => { optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${opt}')">${opt}</div>`; }); qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; qList.appendChild(qContainer); }); }
+            if(data.questions) { 
+                data.questions.forEach((item, idx) => { 
+                    const qContainer = document.createElement('div'); 
+                    qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; 
+                    let optionsHtml = ''; 
+                    item.options.forEach((opt, optIdx) => { 
+                        // Escape quotes in option text for safety
+                        const safeOpt = opt.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+                        optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${safeOpt}')">${opt}</div>`; 
+                    }); 
+                    qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl" onclick="speak('${item.q.replace(/'/g, "\\'")}')">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; 
+                    qList.appendChild(qContainer); 
+                }); 
+            }
         }
         
         document.getElementById('generate-button').onclick = () => { if(state.currentLesson) loadLesson(state.currentLesson.displayTopic, state.currentLesson.topicEs, state.currentLesson.topicEn, state.currentLesson.imgUrl, true); };
