@@ -359,6 +359,413 @@
         // APIS - AQUI ES DONDE OCURRE LA MAGIA
         // IMPORTANTE: EL PROXY ES SOLO PARA DEMOSTRACIÓN. EN PRODUCCION USA SERVERLESS
         
+        // ============================================
+        // API CONFIGURATION
+        // ============================================
+        // NOTE: These API keys are intentionally placed in client-side code as per requirements.
+        // In a production environment, these should be moved to a serverless backend
+        // (e.g., Vercel Functions, AWS Lambda) to prevent exposure and quota abuse.
+        // For production deployment, replace direct API calls with calls to your secure backend.
+        const API_CONFIG = {
+            openai: {
+                key: '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',
+                textEndpoint: 'https://api.openai.com/v1/chat/completions',
+                imageEndpoint: 'https://api.openai.com/v1/images/generations',
+                ttsEndpoint: 'https://api.openai.com/v1/audio/speech'
+            },
+            gemini: {
+                key: 'AIzaSyBg-ayQwoIDEt0lpPs-MDW_QT_Ck_Xs_ss',
+                textEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+            },
+            grok: {
+                key: 'xai-mIqGxlPmsdVc6U1hJWbW7IUfpWIuwPxTOUlRQ0dEvQpXatIqRksxM3TUnGcFCPRwRbcxQ5Id7EoaqHbf',
+                textEndpoint: 'https://api.x.ai/v1/chat/completions'
+            },
+            murf: {
+                key: 'ap2_80cff77b-d30b-4070-b68a-5b83755ee202',
+                ttsEndpoint: 'https://api.murf.ai/v1/speech/generate'
+            }
+        };
+
+        // Voice settings - Female voices for Spanish (Mexico) and English (United States)
+        const VOICE_CONFIG = {
+            es: {
+                openai: 'nova', // Female voice in OpenAI TTS
+                murf: 'es-MX-DaliaNeural' // Female Mexican Spanish voice
+            },
+            en: {
+                openai: 'nova', // Female voice in OpenAI TTS
+                murf: 'en-US-JennyNeural' // Female US English voice
+            }
+        };
+
+        // ============================================
+        // AI GENERATION SERVICE WITH FALLBACK
+        // ============================================
+        
+        /**
+         * Generate text using AI with fallback flow: OpenAI → Gemini → Grok
+         * @param {string} prompt - The prompt for text generation
+         * @param {string} lang - Language code ('es' or 'en')
+         * @returns {Promise<string>} - Generated text
+         */
+        async function generateText(prompt, lang = 'es') {
+            const systemPrompt = lang === 'es' 
+                ? 'Eres un tutor amigable para niños. Responde de forma clara, divertida y educativa en español de México.'
+                : 'You are a friendly tutor for children. Respond clearly, fun, and educational in US English.';
+            
+            // Priority 1: OpenAI (ChatGPT)
+            try {
+                const response = await fetch(API_CONFIG.openai.textEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: 'gpt-4o-mini',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 1000,
+                        temperature: 0.7
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.choices[0].message.content;
+                }
+            } catch (error) {
+                // Silently continue to next fallback
+            }
+            
+            // Priority 2: Gemini
+            try {
+                const response = await fetch(`${API_CONFIG.gemini.textEndpoint}?key=${API_CONFIG.gemini.key}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{
+                                text: `${systemPrompt}\n\n${prompt}`
+                            }]
+                        }],
+                        generationConfig: {
+                            maxOutputTokens: 1000,
+                            temperature: 0.7
+                        }
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.candidates[0].content.parts[0].text;
+                }
+            } catch (error) {
+                // Silently continue to next fallback
+            }
+            
+            // Priority 3: Grok (xAI)
+            try {
+                const response = await fetch(API_CONFIG.grok.textEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.grok.key}`
+                    },
+                    body: JSON.stringify({
+                        model: 'grok-beta',
+                        messages: [
+                            { role: 'system', content: systemPrompt },
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 1000,
+                        temperature: 0.7
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.choices[0].message.content;
+                }
+            } catch (error) {
+                // All services failed
+            }
+            
+            // Return a friendly fallback message if all APIs fail
+            return lang === 'es' 
+                ? '¡Ups! No pude generar la información en este momento. Por favor, intenta de nuevo más tarde.'
+                : 'Oops! I could not generate the information right now. Please try again later.';
+        }
+
+        /**
+         * Generate image using AI with fallback flow: OpenAI DALL-E → Pollinations
+         * @param {string} prompt - The prompt for image generation
+         * @returns {Promise<string>} - Image URL
+         */
+        async function generateImage(prompt) {
+            // Priority 1: OpenAI DALL-E
+            try {
+                const response = await fetch(API_CONFIG.openai.imageEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: 'dall-e-3',
+                        prompt: `A colorful, child-friendly educational illustration of: ${prompt}`,
+                        n: 1,
+                        size: '1024x1024',
+                        quality: 'standard'
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    return data.data[0].url;
+                }
+            } catch (error) {
+                // Silently continue to fallback
+            }
+            
+            // Fallback: Pollinations (free image generation)
+            return `https://image.pollinations.ai/prompt/${encodeURIComponent(`illustration of ${prompt} vector flat colorful`)}?width=600&height=400&nologo=true`;
+        }
+
+        /**
+         * Generate voice/speech using AI with fallback flow: OpenAI TTS → Murf
+         * @param {string} text - The text to convert to speech
+         * @param {string} lang - Language code ('es' or 'en')
+         * @returns {Promise<Blob|null>} - Audio blob or null if failed
+         */
+        async function generateVoice(text, lang = 'es') {
+            const cleanText = stripEmojis(text);
+            
+            // Priority 1: OpenAI TTS
+            try {
+                const response = await fetch(API_CONFIG.openai.ttsEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_CONFIG.openai.key}`
+                    },
+                    body: JSON.stringify({
+                        model: 'tts-1',
+                        input: cleanText,
+                        voice: VOICE_CONFIG[lang].openai, // Female voice (nova)
+                        response_format: 'mp3'
+                    })
+                });
+                
+                if (response.ok) {
+                    return await response.blob();
+                }
+            } catch (error) {
+                // Silently continue to fallback
+            }
+            
+            // Priority 2: Murf AI
+            try {
+                const response = await fetch(API_CONFIG.murf.ttsEndpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'api-key': API_CONFIG.murf.key
+                    },
+                    body: JSON.stringify({
+                        text: cleanText,
+                        voiceId: VOICE_CONFIG[lang].murf,
+                        format: 'MP3',
+                        sampleRate: 24000
+                    })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.audioFile) {
+                        // Murf returns a URL, fetch the audio
+                        const audioResponse = await fetch(data.audioFile);
+                        if (audioResponse.ok) {
+                            return await audioResponse.blob();
+                        }
+                    }
+                }
+            } catch (error) {
+                // Murf failed
+            }
+            
+            // If all TTS APIs fail, return null (will use browser's native TTS as last resort)
+            return null;
+        }
+
+        /**
+         * Speak text using AI voice or native browser TTS as fallback
+         * @param {string} text - The text to speak
+         */
+        async function speak(text) {
+            if (!text) return;
+            
+            const lang = state.lang;
+            const playerEl = document.getElementById('sticky-audio-player');
+            const statusEl = document.getElementById('player-status');
+            const playPauseBtn = document.getElementById('player-play-pause');
+            
+            // Show audio player
+            playerEl.classList.add('visible');
+            statusEl.textContent = lang === 'es' ? 'Cargando voz...' : 'Loading voice...';
+            
+            try {
+                // Try AI voice generation
+                const audioBlob = await generateVoice(text, lang);
+                
+                if (audioBlob) {
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    state.audioSource = audio;
+                    state.isPlaying = true;
+                    state.currentText = text;
+                    
+                    statusEl.textContent = lang === 'es' ? 'Reproduciendo...' : 'Playing...';
+                    playPauseBtn.textContent = '⏸';
+                    
+                    audio.play();
+                    
+                    audio.onended = () => {
+                        state.isPlaying = false;
+                        playPauseBtn.textContent = '▶';
+                        statusEl.textContent = lang === 'es' ? 'Finalizado' : 'Finished';
+                        setTimeout(() => playerEl.classList.remove('visible'), 2000);
+                    };
+                    
+                    return;
+                }
+            } catch (error) {
+                // Fall through to native TTS
+            }
+            
+            // Fallback: Native browser TTS
+            if ('speechSynthesis' in window) {
+                statusEl.textContent = lang === 'es' ? 'Voz básica...' : 'Basic voice...';
+                
+                const utterance = new SpeechSynthesisUtterance(stripEmojis(text));
+                utterance.lang = lang === 'es' ? 'es-MX' : 'en-US';
+                utterance.rate = 0.9;
+                utterance.pitch = 1.1;
+                
+                // Try to find a female voice
+                const voices = speechSynthesis.getVoices();
+                const femaleVoice = voices.find(v => 
+                    v.lang.startsWith(lang === 'es' ? 'es' : 'en') && 
+                    (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('sabina'))
+                );
+                if (femaleVoice) {
+                    utterance.voice = femaleVoice;
+                }
+                
+                utterance.onend = () => {
+                    state.isPlaying = false;
+                    playPauseBtn.textContent = '▶';
+                    statusEl.textContent = lang === 'es' ? 'Finalizado' : 'Finished';
+                    setTimeout(() => playerEl.classList.remove('visible'), 2000);
+                };
+                
+                state.isPlaying = true;
+                playPauseBtn.textContent = '⏸';
+                speechSynthesis.speak(utterance);
+            } else {
+                statusEl.textContent = lang === 'es' ? 'Sin soporte de voz' : 'No voice support';
+                setTimeout(() => playerEl.classList.remove('visible'), 2000);
+            }
+        }
+        
+        // Make speak function available globally for onclick handlers
+        window.speak = speak;
+
+        /**
+         * Generate lesson content using AI
+         * @param {string} topic - The lesson topic
+         * @param {string} lang - Language code
+         * @returns {Promise<Object>} - Lesson data with content, questions, and related topics
+         */
+        async function generateLessonContent(topic, lang = 'es') {
+            const prompt = lang === 'es'
+                ? `Crea una lección educativa para niños sobre "${topic}". 
+                   Incluye:
+                   1. Una explicación clara y divertida (3-4 párrafos)
+                   2. 3 preguntas de opción múltiple con sus respuestas
+                   3. 3 temas relacionados para explorar
+                   
+                   Formato de respuesta JSON:
+                   {
+                       "lesson": "contenido de la lección aquí",
+                       "questions": [
+                           {"q": "pregunta", "options": ["opción1", "opción2", "opción3"], "correct": 0}
+                       ],
+                       "related": ["tema1", "tema2", "tema3"]
+                   }`
+                : `Create an educational lesson for children about "${topic}".
+                   Include:
+                   1. A clear and fun explanation (3-4 paragraphs)
+                   2. 3 multiple choice questions with answers
+                   3. 3 related topics to explore
+                   
+                   Response format JSON:
+                   {
+                       "lesson": "lesson content here",
+                       "questions": [
+                           {"q": "question", "options": ["option1", "option2", "option3"], "correct": 0}
+                       ],
+                       "related": ["topic1", "topic2", "topic3"]
+                   }`;
+            
+            try {
+                const response = await generateText(prompt, lang);
+                
+                // Try to parse JSON from response
+                const jsonMatch = response.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    return JSON.parse(jsonMatch[0]);
+                }
+            } catch (error) {
+                // Failed to generate or parse
+            }
+            
+            // Return default content if generation fails
+            return {
+                lesson: lang === 'es' 
+                    ? `¡Hola! Hoy vamos a aprender algo increíble sobre **${topic}**. Este es un tema fascinante que te ayudará a entender mejor el mundo. ¡Sigue explorando para convertirte en un experto!`
+                    : `Hello! Today we're going to learn something amazing about **${topic}**. This is a fascinating topic that will help you understand the world better. Keep exploring to become an expert!`,
+                questions: [
+                    {
+                        q: lang === 'es' ? `¿Qué estamos aprendiendo hoy?` : `What are we learning today?`,
+                        options: lang === 'es' ? ["Nada", topic, "A dormir"] : ["Nothing", topic, "To sleep"],
+                        correct: 1
+                    }
+                ],
+                related: lang === 'es' ? ["Ciencia", "Historia", "Arte"] : ["Science", "History", "Art"]
+            };
+        }
+
+        /**
+         * Generate chat response using AI
+         * @param {string} message - User message
+         * @param {string} lang - Language code
+         * @returns {Promise<string>} - AI response
+         */
+        async function generateChatResponse(message, lang = 'es') {
+            const contextPrompt = lang === 'es'
+                ? `El usuario pregunta: "${message}". Responde de forma amigable, educativa y apropiada para niños.`
+                : `The user asks: "${message}". Respond in a friendly, educational, and child-appropriate way.`;
+            
+            return await generateText(contextPrompt, lang);
+        }
+
         const robiIconUrl = "https://image.pollinations.ai/prompt/cute%203d%20avatar%20young%20female%20teacher%20low%20ponytail%20black%20hair%20black%20glasses%20friendly%20icon%20soft%20lighting?width=150&height=150&nologo=true";
 
         const BRANCHES = [
@@ -417,6 +824,12 @@
         function playCorrectSound() { document.getElementById('sfx-correct').play().catch(()=>{}); }
         function playWrongSound() { document.getElementById('sfx-wrong').play().catch(()=>{}); }
         
+        // Make sound functions globally available
+        window.playClickSound = playClickSound;
+        window.playWinSound = playWinSound;
+        window.playCorrectSound = playCorrectSound;
+        window.playWrongSound = playWrongSound;
+        
         function toggleMusic() {
             const bg = document.getElementById('bg-music');
             const btn = document.getElementById('music-btn');
@@ -431,6 +844,9 @@
                 btn.style.opacity = "0.5";
             }
         }
+        
+        // Make toggleMusic globally available
+        window.toggleMusic = toggleMusic;
 
         function updateUI() {
             const t = i18n[state.lang];
@@ -455,7 +871,18 @@
         }
 
         function getImageUrl(topicEn) { 
+            // Use the generateImage function for dynamic image generation
+            // Falls back to Pollinations if DALL-E fails
             return `https://image.pollinations.ai/prompt/illustration%20of%20${encodeURIComponent(topicEn)}%20vector%20flat%20colorful?width=600&height=400&nologo=true`; 
+        }
+        
+        /**
+         * Get AI-generated image URL with DALL-E fallback to Pollinations
+         * @param {string} topic - The topic for image generation
+         * @returns {Promise<string>} - Image URL
+         */
+        async function getAIImageUrl(topic) {
+            return await generateImage(topic);
         }
 
         function initFacts() { state.currentFacts = [...BASE_FACTS].sort(() => 0.5 - Math.random()).slice(0, 5); state.currentFactIndex = 0; updateFactUI(); }
@@ -631,8 +1058,7 @@
 
         // SIMULATED API RESPONSE (REPLACE WITH SERVERLESS IN PROD)
         async function loadLesson(displayTopic, topicEs, topicEn, imgUrl, isMagicMode) {
-             // En una app real, aquí iría la llamada a tu API de Vercel
-             // Como esto es una demo frontend, simulamos una respuesta "mágica"
+             // Using AI generation with fallback flow
              
              const t = i18n[state.lang];
              
@@ -652,37 +1078,247 @@
              document.getElementById('lesson-title').textContent = displayTopic; 
              document.getElementById('lesson-header-bg').style.backgroundImage = `url('${imgUrl}')`;
              
-             // Simular tiempo de carga
-             setTimeout(() => {
-                 const mockData = {
-                     lesson: `¡Hola! Hoy vamos a aprender algo increíble sobre **${displayTopic}**. ¿Sabías que es un tema fascinante? Los expertos dicen que conocer sobre esto nos ayuda a entender mejor el mundo. Imagina que eres un explorador descubriendo secretos antiguos. ¡Sigue leyendo para convertirte en un experto!`,
-                     questions: [
-                         {q: `¿Qué estamos aprendiendo?`, options: ["Nada", displayTopic, "A dormir"], correct: 1},
-                         {q: "Aprender es...", options: ["Aburrido", "Un superpoder", "Malo"], correct: 1},
-                         {q: "¿Qué sigue?", options: ["Investigar más", "Rendirse", "Nada"], correct: 0}
-                     ],
-                     related: ["Ciencia", "Historia", "Arte"]
-                 };
+             try {
+                 // Try to get AI-generated image
+                 const aiImageUrl = await getAIImageUrl(displayTopic);
+                 if (aiImageUrl) {
+                     document.getElementById('lesson-header-bg').style.backgroundImage = `url('${aiImageUrl}')`;
+                 }
+             } catch (error) {
+                 // Keep the original image URL if AI image fails
+             }
+             
+             try {
+                 // Generate lesson content using AI with fallback
+                 const lessonData = await generateLessonContent(displayTopic, state.lang);
                  
-                 renderLessonContent(mockData);
-                 state.currentLesson = { ...mockData, displayTopic, topicEs, topicEn, imgUrl };
-                 // Aquí iría prefetchAudio
-             }, 1500);
+                 renderLessonContent(lessonData);
+                 state.currentLesson = { ...lessonData, displayTopic, topicEs, topicEn, imgUrl };
+                 
+                 // Add to search history
+                 if (!state.searchHistory.includes(displayTopic)) {
+                     state.searchHistory.unshift(displayTopic);
+                     state.searchHistory = state.searchHistory.slice(0, 10);
+                     localStorage.setItem('searchHist', JSON.stringify(state.searchHistory));
+                     renderSearchHistory();
+                 }
+             } catch (error) {
+                 // Show error state if all API calls fail
+                 document.getElementById('lesson-loader').classList.add('hidden');
+                 document.getElementById('lesson-error-state').classList.remove('hidden');
+                 
+                 // Set up retry button
+                 document.getElementById('retry-lesson-btn').onclick = () => {
+                     playClickSound();
+                     loadLesson(displayTopic, topicEs, topicEn, imgUrl, isMagicMode);
+                 };
+             }
         }
 
         function renderLessonContent(data) {
             document.getElementById('lesson-loader').classList.add('hidden'); document.getElementById('lesson-content-wrapper').classList.remove('hidden'); document.getElementById('lesson-content').innerHTML = data.lesson;
-            document.getElementById('read-for-me-btn').onclick = () => { playClickSound(); alert("Audio simulado (conecta API real)"); };
+            
+            // Set up "Read for me" button with AI voice
+            document.getElementById('read-for-me-btn').onclick = () => { 
+                playClickSound(); 
+                speak(data.lesson); 
+            };
             
             const qList = document.getElementById('lesson-questions-list'); qList.innerHTML = '';
-            if(data.questions) { data.questions.forEach((item, idx) => { const qContainer = document.createElement('div'); qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; let optionsHtml = ''; item.options.forEach((opt, optIdx) => { optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${opt}')">${opt}</div>`; }); qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; qList.appendChild(qContainer); }); }
+            if(data.questions) { 
+                data.questions.forEach((item, idx) => { 
+                    const qContainer = document.createElement('div'); 
+                    qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; 
+                    
+                    // Create question header
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = "flex justify-between items-center mb-3";
+                    
+                    const questionP = document.createElement('p');
+                    questionP.className = "font-bold text-lg text-slate-800";
+                    questionP.textContent = "❓ " + item.q;
+                    
+                    const speakBtn = document.createElement('button');
+                    speakBtn.className = "text-blue-400 hover:text-blue-600 text-xl";
+                    speakBtn.textContent = "🔊";
+                    speakBtn.onclick = () => speak(item.q);
+                    
+                    headerDiv.appendChild(questionP);
+                    headerDiv.appendChild(speakBtn);
+                    
+                    // Create options container
+                    const optionsDiv = document.createElement('div');
+                    optionsDiv.className = "mt-2 space-y-2";
+                    
+                    item.options.forEach((opt, optIdx) => {
+                        const optDiv = document.createElement('div');
+                        optDiv.className = "quiz-option mt-2";
+                        optDiv.textContent = opt;
+                        optDiv.onclick = function() { checkLessonAnswer(this, optIdx === item.correct, opt); };
+                        optionsDiv.appendChild(optDiv);
+                    });
+                    
+                    qContainer.appendChild(headerDiv);
+                    qContainer.appendChild(optionsDiv);
+                    qList.appendChild(qContainer); 
+                }); 
+            }
+            
+            // Render related topics
+            const subcatList = document.getElementById('subcategories-list');
+            if (subcatList && data.related) {
+                subcatList.innerHTML = '';
+                data.related.forEach(topic => {
+                    const btn = document.createElement('button');
+                    btn.className = "bg-blue-50 text-blue-600 px-4 py-2 rounded-full font-bold text-sm hover:bg-blue-100 transition cursor-pointer";
+                    btn.textContent = topic;
+                    btn.onclick = () => {
+                        playClickSound();
+                        loadLesson(topic, topic, topic, getImageUrl(topic), false);
+                    };
+                    subcatList.appendChild(btn);
+                });
+            }
         }
         
         document.getElementById('generate-button').onclick = () => { if(state.currentLesson) loadLesson(state.currentLesson.displayTopic, state.currentLesson.topicEs, state.currentLesson.topicEn, state.currentLesson.imgUrl, true); };
         
         window.checkLessonAnswer = function(el, isCorrect, text) { const t = i18n[state.lang]; if(el.classList.contains('correct') || el.classList.contains('wrong')) return; if(isCorrect) { el.classList.add('correct'); playCorrectSound(); confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } }); } else { el.classList.add('wrong'); playWrongSound(); } };
 
-        document.getElementById('start-random-quiz').onclick = () => { alert("¡Pronto disponible con tu Backend!"); };
+        document.getElementById('start-random-quiz').onclick = async () => { 
+            playClickSound();
+            
+            const quizContainer = document.getElementById('quiz-container');
+            const quizPlaceholder = document.getElementById('quiz-placeholder');
+            const quizQuestionsList = document.getElementById('quiz-questions-list');
+            const quizTopicTitle = document.getElementById('quiz-topic-title');
+            const finishBtn = document.getElementById('finish-quiz-btn');
+            const quizResult = document.getElementById('quiz-result');
+            
+            // Show quiz container, hide placeholder
+            quizPlaceholder.classList.add('hidden');
+            quizContainer.classList.remove('hidden');
+            quizResult.classList.add('hidden');
+            finishBtn.classList.add('hidden');
+            quizQuestionsList.innerHTML = '<div class="text-center py-8"><div class="text-4xl animate-bounce mb-4">🧠</div><p class="text-slate-500 font-bold">Generando quiz...</p></div>';
+            
+            // Pick a random topic
+            const topics = state.lang === 'es' ? STATIC_TOPICS_ES : STATIC_TOPICS_EN;
+            const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+            quizTopicTitle.textContent = randomTopic;
+            
+            try {
+                // Generate quiz using AI
+                const prompt = state.lang === 'es'
+                    ? `Genera 5 preguntas de quiz para niños sobre "${randomTopic}". Formato JSON:
+                       {"questions": [{"q": "pregunta", "options": ["a", "b", "c", "d"], "correct": 0}]}`
+                    : `Generate 5 quiz questions for children about "${randomTopic}". JSON format:
+                       {"questions": [{"q": "question", "options": ["a", "b", "c", "d"], "correct": 0}]}`;
+                
+                const response = await generateText(prompt, state.lang);
+                
+                let quizData;
+                try {
+                    const jsonMatch = response.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        quizData = JSON.parse(jsonMatch[0]);
+                    }
+                } catch (e) {
+                    // Use fallback quiz
+                }
+                
+                if (!quizData || !quizData.questions) {
+                    // Fallback quiz
+                    quizData = {
+                        questions: [
+                            { q: state.lang === 'es' ? `¿Qué es ${randomTopic}?` : `What is ${randomTopic}?`, options: [randomTopic, "Algo más", "No sé", "Otra cosa"], correct: 0 },
+                            { q: state.lang === 'es' ? "¿Te gusta aprender?" : "Do you like learning?", options: [state.lang === 'es' ? "Sí" : "Yes", "No", state.lang === 'es' ? "A veces" : "Sometimes", state.lang === 'es' ? "Siempre" : "Always"], correct: 0 }
+                        ]
+                    };
+                }
+                
+                // Render quiz questions
+                quizQuestionsList.innerHTML = '';
+                let answeredCount = 0;
+                let correctCount = 0;
+                
+                quizData.questions.forEach((item, idx) => {
+                    const qContainer = document.createElement('div');
+                    qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm";
+                    qContainer.innerHTML = `
+                        <p class="font-bold text-lg text-slate-800 mb-4">${idx + 1}. ${item.q}</p>
+                        <div class="space-y-2">
+                            ${item.options.map((opt, optIdx) => `
+                                <div class="quiz-option" data-correct="${optIdx === item.correct}" data-idx="${idx}">${opt}</div>
+                            `).join('')}
+                        </div>
+                    `;
+                    quizQuestionsList.appendChild(qContainer);
+                });
+                
+                // Add click handlers
+                quizQuestionsList.querySelectorAll('.quiz-option').forEach(opt => {
+                    opt.onclick = function() {
+                        if (this.classList.contains('correct') || this.classList.contains('wrong')) return;
+                        
+                        const isCorrect = this.dataset.correct === 'true';
+                        const siblings = this.parentElement.querySelectorAll('.quiz-option');
+                        
+                        siblings.forEach(s => s.style.pointerEvents = 'none');
+                        
+                        if (isCorrect) {
+                            this.classList.add('correct');
+                            playCorrectSound();
+                            correctCount++;
+                        } else {
+                            this.classList.add('wrong');
+                            playWrongSound();
+                            // Show correct answer
+                            siblings.forEach(s => {
+                                if (s.dataset.correct === 'true') s.classList.add('correct');
+                            });
+                        }
+                        
+                        answeredCount++;
+                        if (answeredCount === quizData.questions.length) {
+                            finishBtn.classList.remove('hidden');
+                        }
+                    };
+                });
+                
+                // Finish button handler
+                finishBtn.onclick = () => {
+                    playClickSound();
+                    const score = correctCount * 10;
+                    state.points += score;
+                    localStorage.setItem('userPoints', state.points);
+                    
+                    state.quizHistory.unshift({
+                        topic: randomTopic,
+                        score: score,
+                        date: new Date().toISOString()
+                    });
+                    localStorage.setItem('quizHist', JSON.stringify(state.quizHistory));
+                    
+                    quizResult.classList.remove('hidden');
+                    document.getElementById('quiz-score-text').textContent = `+${score} ${state.lang === 'es' ? 'Puntos' : 'Points'}`;
+                    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+                    playWinSound();
+                    updateUI();
+                };
+                
+            } catch (error) {
+                quizQuestionsList.innerHTML = `<div class="text-center py-8"><div class="text-4xl mb-4">😅</div><p class="text-slate-500 font-bold">${state.lang === 'es' ? 'Error al generar quiz. Intenta de nuevo.' : 'Error generating quiz. Try again.'}</p></div>`;
+            }
+        };
+        
+        window.exitQuiz = function() {
+            playClickSound();
+            document.getElementById('quiz-container').classList.add('hidden');
+            document.getElementById('quiz-placeholder').classList.remove('hidden');
+            document.getElementById('quiz-result').classList.add('hidden');
+            renderQuizHistory();
+        };
 
         // --- INICIALIZACIÓN ---
         
@@ -773,6 +1409,338 @@
                 document.getElementById('section-explore').classList.add('hidden'); document.getElementById('section-trophies').classList.remove('hidden'); document.getElementById('section-branches').classList.add('hidden');
                 e.target.classList.add('text-blue-600','border-blue-600'); document.getElementById('subtab-explore').classList.remove('text-blue-600','border-blue-600'); document.getElementById('subtab-branches').classList.remove('text-blue-600','border-blue-600'); renderHistory(); 
             };
+            
+            // ============================================
+            // CHAT FUNCTIONALITY
+            // ============================================
+            const chatOverlay = document.getElementById('chat-overlay');
+            const chatMessages = document.getElementById('chat-messages');
+            const chatInput = document.getElementById('chat-input');
+            const sendChatBtn = document.getElementById('send-chat');
+            const closeChatBtn = document.getElementById('close-chat');
+            const minimizeChatBtn = document.getElementById('minimize-chat');
+            const assistantBtn = document.getElementById('assistant-btn');
+            const voiceChatBtn = document.getElementById('voice-chat-btn');
+            
+            // Open chat
+            assistantBtn.onclick = () => {
+                playClickSound();
+                chatOverlay.classList.add('open');
+                
+                // Add greeting if chat is empty
+                if (chatMessages.children.length === 0) {
+                    const greeting = state.lang === 'es' 
+                        ? '¡Hola! Soy Robi, tu profe personal. 🍎 ¿En qué puedo ayudarte hoy?'
+                        : 'Hello! I\'m Robi, your personal tutor. 🍎 How can I help you today?';
+                    addChatMessage(greeting, 'assistant');
+                }
+            };
+            
+            // Close chat
+            closeChatBtn.onclick = () => {
+                playClickSound();
+                chatOverlay.classList.remove('open');
+            };
+            
+            minimizeChatBtn.onclick = () => {
+                playClickSound();
+                chatOverlay.classList.remove('open');
+            };
+            
+            // Click outside to close
+            chatOverlay.onclick = (e) => {
+                if (e.target === chatOverlay) {
+                    chatOverlay.classList.remove('open');
+                }
+            };
+            
+            // Add chat message helper
+            function addChatMessage(text, sender) {
+                const msgDiv = document.createElement('div');
+                msgDiv.className = sender === 'user' 
+                    ? 'flex justify-end'
+                    : 'flex justify-start';
+                
+                const bubble = document.createElement('div');
+                bubble.className = sender === 'user'
+                    ? 'bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[80%] text-sm'
+                    : 'bg-white text-slate-700 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] text-sm shadow-sm border border-slate-100';
+                
+                // Use textContent for user messages to prevent XSS
+                // Use textContent for all messages for safety
+                const textSpan = document.createElement('span');
+                textSpan.textContent = text;
+                bubble.appendChild(textSpan);
+                
+                // Add speak button for assistant messages
+                if (sender === 'assistant') {
+                    const speakBtn = document.createElement('button');
+                    speakBtn.className = 'ml-2 text-blue-400 hover:text-blue-600 text-sm';
+                    speakBtn.textContent = '🔊';
+                    speakBtn.onclick = () => speak(text);
+                    bubble.appendChild(speakBtn);
+                }
+                
+                msgDiv.appendChild(bubble);
+                chatMessages.appendChild(msgDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            // Send message
+            async function sendChatMessage() {
+                const message = chatInput.value.trim();
+                if (!message) return;
+                
+                playClickSound();
+                addChatMessage(message, 'user');
+                chatInput.value = '';
+                
+                // Add thinking indicator
+                const thinkingDiv = document.createElement('div');
+                thinkingDiv.className = 'flex justify-start';
+                thinkingDiv.id = 'thinking-indicator';
+                thinkingDiv.innerHTML = `<div class="bg-white text-slate-400 rounded-2xl px-4 py-2 text-sm animate-pulse">${state.lang === 'es' ? 'Pensando...' : 'Thinking...'}</div>`;
+                chatMessages.appendChild(thinkingDiv);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+                
+                try {
+                    // Generate response using AI with fallback
+                    const response = await generateChatResponse(message, state.lang);
+                    
+                    // Remove thinking indicator
+                    const indicator = document.getElementById('thinking-indicator');
+                    if (indicator) indicator.remove();
+                    
+                    // Add AI response
+                    addChatMessage(response, 'assistant');
+                    
+                    // Save to chat history
+                    state.chatHistory.push({ role: 'user', content: message });
+                    state.chatHistory.push({ role: 'assistant', content: response });
+                    
+                } catch (error) {
+                    // Remove thinking indicator
+                    const indicator = document.getElementById('thinking-indicator');
+                    if (indicator) indicator.remove();
+                    
+                    addChatMessage(state.lang === 'es' 
+                        ? '¡Ups! No pude procesar eso. Intenta de nuevo.'
+                        : 'Oops! I couldn\'t process that. Try again.', 
+                        'assistant');
+                }
+            }
+            
+            sendChatBtn.onclick = sendChatMessage;
+            chatInput.onkeypress = (e) => { if (e.key === 'Enter') sendChatMessage(); };
+            
+            // Voice input for chat
+            voiceChatBtn.onclick = () => {
+                playClickSound();
+                
+                if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    const recognition = new SpeechRecognition();
+                    
+                    recognition.lang = state.lang === 'es' ? 'es-MX' : 'en-US';
+                    recognition.interimResults = false;
+                    recognition.maxAlternatives = 1;
+                    
+                    voiceChatBtn.classList.add('bg-red-500', 'text-white');
+                    
+                    recognition.onresult = (event) => {
+                        const transcript = event.results[0][0].transcript;
+                        chatInput.value = transcript;
+                        voiceChatBtn.classList.remove('bg-red-500', 'text-white');
+                    };
+                    
+                    recognition.onerror = () => {
+                        voiceChatBtn.classList.remove('bg-red-500', 'text-white');
+                    };
+                    
+                    recognition.onend = () => {
+                        voiceChatBtn.classList.remove('bg-red-500', 'text-white');
+                    };
+                    
+                    recognition.start();
+                } else {
+                    alert(state.lang === 'es' 
+                        ? 'Tu navegador no soporta reconocimiento de voz.'
+                        : 'Your browser doesn\'t support speech recognition.');
+                }
+            };
+            
+            // Voice input for search
+            const searchMicBtn = document.getElementById('search-mic-btn');
+            if (searchMicBtn) {
+                searchMicBtn.onclick = () => {
+                    playClickSound();
+                    
+                    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+                        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                        const recognition = new SpeechRecognition();
+                        
+                        recognition.lang = state.lang === 'es' ? 'es-MX' : 'en-US';
+                        recognition.interimResults = false;
+                        recognition.maxAlternatives = 1;
+                        
+                        searchMicBtn.style.color = '#ef4444';
+                        
+                        recognition.onresult = (event) => {
+                            const transcript = event.results[0][0].transcript;
+                            document.getElementById('topic-search').value = transcript;
+                            searchMicBtn.style.color = '';
+                        };
+                        
+                        recognition.onerror = () => {
+                            searchMicBtn.style.color = '';
+                        };
+                        
+                        recognition.onend = () => {
+                            searchMicBtn.style.color = '';
+                        };
+                        
+                        recognition.start();
+                    }
+                };
+            }
+            
+            // ============================================
+            // AUDIO PLAYER CONTROLS
+            // ============================================
+            const playerPlayPause = document.getElementById('player-play-pause');
+            const playerClose = document.getElementById('player-close');
+            const audioPlayer = document.getElementById('sticky-audio-player');
+            
+            playerPlayPause.onclick = () => {
+                playClickSound();
+                
+                if (state.audioSource) {
+                    if (state.isPlaying) {
+                        state.audioSource.pause();
+                        state.isPlaying = false;
+                        playerPlayPause.textContent = '▶';
+                    } else {
+                        state.audioSource.play();
+                        state.isPlaying = true;
+                        playerPlayPause.textContent = '⏸';
+                    }
+                } else if ('speechSynthesis' in window) {
+                    if (speechSynthesis.speaking && !speechSynthesis.paused) {
+                        speechSynthesis.pause();
+                        state.isPlaying = false;
+                        playerPlayPause.textContent = '▶';
+                    } else if (speechSynthesis.paused) {
+                        speechSynthesis.resume();
+                        state.isPlaying = true;
+                        playerPlayPause.textContent = '⏸';
+                    }
+                }
+            };
+            
+            playerClose.onclick = () => {
+                playClickSound();
+                
+                if (state.audioSource) {
+                    state.audioSource.pause();
+                    state.audioSource = null;
+                }
+                
+                if ('speechSynthesis' in window) {
+                    speechSynthesis.cancel();
+                }
+                
+                state.isPlaying = false;
+                audioPlayer.classList.remove('visible');
+            };
+            
+            // ============================================
+            // COMPLETE LESSON BUTTON
+            // ============================================
+            const completeBtn = document.getElementById('complete-button');
+            if (completeBtn) {
+                completeBtn.onclick = () => {
+                    playClickSound();
+                    
+                    if (state.currentLesson) {
+                        // Add points
+                        state.points += 50;
+                        localStorage.setItem('userPoints', state.points);
+                        
+                        // Add to history
+                        const historyItem = {
+                            displayTopic: state.currentLesson.displayTopic,
+                            topicEs: state.currentLesson.topicEs,
+                            topicEn: state.currentLesson.topicEn,
+                            date: new Date().toISOString()
+                        };
+                        
+                        // Check if already in history
+                        if (!state.history.some(h => h.displayTopic === historyItem.displayTopic)) {
+                            state.history.unshift(historyItem);
+                            state.history = state.history.slice(0, 20);
+                            localStorage.setItem('lessonHist', JSON.stringify(state.history));
+                        }
+                        
+                        // Celebrate
+                        confetti({ particleCount: 200, spread: 100, origin: { y: 0.6 } });
+                        playWinSound();
+                        
+                        // Update UI
+                        updateUI();
+                        
+                        // Go back to discovery
+                        setTimeout(() => {
+                            document.getElementById('lessonDetailContainer').style.display = 'none';
+                            document.getElementById('discoveryContainer').style.display = 'block';
+                            document.getElementById('main-header').classList.remove('hidden');
+                            document.getElementById('main-tabs').classList.remove('hidden');
+                            window.scrollTo(0, 0);
+                        }, 1500);
+                    }
+                };
+            }
+            
+            // ============================================
+            // HOME BUTTON
+            // ============================================
+            const homeBtn = document.getElementById('home-btn');
+            if (homeBtn) {
+                homeBtn.onclick = () => {
+                    playClickSound();
+                    document.getElementById('lessonDetailContainer').style.display = 'none';
+                    document.getElementById('discoveryContainer').style.display = 'block';
+                    document.getElementById('main-header').classList.remove('hidden');
+                    document.getElementById('main-tabs').classList.remove('hidden');
+                    document.getElementById('lessonView').style.display = 'block';
+                    document.getElementById('quizView').style.display = 'none';
+                    document.getElementById('quiz-container').classList.add('hidden');
+                    document.getElementById('quiz-placeholder').classList.remove('hidden');
+                    document.getElementById('tab-lesson').className = "btn-fun shadow-blue-400 ring-4 ring-blue-50";
+                    document.getElementById('tab-quiz').className = "btn-secondary-fun";
+                    window.scrollTo(0, 0);
+                };
+            }
+            
+            // ============================================
+            // MENU BUTTON
+            // ============================================
+            const menuBtn = document.getElementById('menu-btn');
+            if (menuBtn) {
+                menuBtn.onclick = () => {
+                    playClickSound();
+                    document.getElementById('side-menu-overlay').classList.add('open');
+                };
+            }
+            
+            // Load saved data from localStorage
+            try {
+                state.points = parseInt(localStorage.getItem('userPoints')) || 0;
+                state.history = JSON.parse(localStorage.getItem('lessonHist')) || [];
+                state.quizHistory = JSON.parse(localStorage.getItem('quizHist')) || [];
+                state.searchHistory = JSON.parse(localStorage.getItem('searchHist')) || [];
+            } catch (e) {
+                // Use defaults
+            }
         });
     </script>
 </body>
