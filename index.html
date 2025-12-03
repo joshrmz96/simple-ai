@@ -420,16 +420,22 @@
         // DO NOT HARDCODE REAL KEYS - Use placeholders or settings modal
         // =====================================================
         const API_CONFIG = {
-            // OpenAI (ChatGPT) - Priority 1
+            // OpenAI (ChatGPT) - Priority 1 for text generation
             openai: {
                 apiKey: localStorage.getItem('openai_api_key') || 'YOUR_OPENAI_API_KEY',
                 endpoint: 'https://api.openai.com/v1/chat/completions',
-                model: 'gpt-3.5-turbo'
+                ttsEndpoint: 'https://api.openai.com/v1/audio/speech',
+                model: 'gpt-3.5-turbo',
+                ttsModel: 'tts-1',
+                ttsVoice: 'nova'
             },
-            // Google Gemini - Priority 2
+            // Google Gemini - Priority 2 for text generation, Priority 1 for TTS
             gemini: {
                 apiKey: localStorage.getItem('gemini_api_key') || 'YOUR_GEMINI_API_KEY',
-                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent'
+                endpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent',
+                ttsEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent',
+                ttsModel: 'gemini-2.0-flash-exp',
+                ttsVoice: 'Kore'
             },
             // Grok (xAI) - Priority 3
             grok: {
@@ -437,7 +443,7 @@
                 endpoint: 'https://api.x.ai/v1/chat/completions',
                 model: 'grok-beta'
             },
-            // Murf.ai - Voice/TTS
+            // Murf.ai - Voice/TTS (Priority 3 for TTS after Gemini and OpenAI)
             murf: {
                 apiKey: localStorage.getItem('murf_api_key') || 'YOUR_MURF_API_KEY',
                 endpoint: 'https://api.murf.ai/v1/speech/generate'
@@ -614,10 +620,155 @@
         }
 
         // =====================================================
-        // MURF.AI VOICE/TTS INTEGRATION
-        // Female voices for Spanish (MX) and English (US)
+        // TTS INTEGRATION WITH FALLBACK LOGIC
+        // Priority: Gemini → OpenAI → Murf → Browser
         // =====================================================
 
+        // Helper function to convert PCM data to WAV format
+        // Gemini TTS returns raw PCM audio with the following specifications:
+        // - Format: Linear16 (16-bit signed PCM)
+        // - Sample Rate: 24000 Hz (24kHz)
+        // - Channels: 1 (Mono)
+        // This function adds the required WAV header so browsers can play the audio
+        function convertPCMToWAV(pcmData, sampleRate = 24000, numChannels = 1, bitsPerSample = 16) {
+            const bytesPerSample = bitsPerSample / 8;
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = pcmData.length;
+            const headerSize = 44;
+            const totalSize = headerSize + dataSize;
+            
+            const buffer = new ArrayBuffer(totalSize);
+            const view = new DataView(buffer);
+            
+            // Helper to write string to DataView
+            const writeString = (offset, str) => {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
+                }
+            };
+            
+            // RIFF chunk descriptor
+            writeString(0, 'RIFF');
+            view.setUint32(4, totalSize - 8, true); // File size minus RIFF header
+            writeString(8, 'WAVE');
+            
+            // fmt sub-chunk
+            writeString(12, 'fmt ');
+            view.setUint32(16, 16, true); // Subchunk1Size (16 for PCM)
+            view.setUint16(20, 1, true); // AudioFormat (1 = PCM)
+            view.setUint16(22, numChannels, true);
+            view.setUint32(24, sampleRate, true);
+            view.setUint32(28, byteRate, true);
+            view.setUint16(32, blockAlign, true);
+            view.setUint16(34, bitsPerSample, true);
+            
+            // data sub-chunk
+            writeString(36, 'data');
+            view.setUint32(40, dataSize, true);
+            
+            // Copy PCM data
+            const pcmView = new Uint8Array(pcmData);
+            const wavData = new Uint8Array(buffer);
+            wavData.set(pcmView, headerSize);
+            
+            return new Blob([buffer], { type: 'audio/wav' });
+        }
+
+        // Generate voice using Gemini TTS (Priority 1)
+        async function generateVoiceWithGemini(text, language = 'es') {
+            if (!isApiKeyConfigured(API_CONFIG.gemini.apiKey)) {
+                throw new Error('Gemini API key not configured');
+            }
+
+            const cleanText = stripEmojis(text);
+            const voiceName = language === 'es' ? 'Kore' : 'Puck'; // Kore for Spanish, Puck for English
+            
+            const url = `${API_CONFIG.gemini.ttsEndpoint}?key=${API_CONFIG.gemini.apiKey}`;
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{ text: cleanText }]
+                    }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: {
+                                    voiceName: voiceName
+                                }
+                            }
+                        }
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
+            }
+
+            const data = await response.json();
+            
+            // Extract base64 audio from response using optional chaining
+            const parts = data?.candidates?.[0]?.content?.parts;
+            if (parts) {
+                for (const part of parts) {
+                    if (part?.inlineData?.data) {
+                        // Decode base64 PCM data using efficient Uint8Array conversion
+                        const base64Audio = part.inlineData.data;
+                        const binaryString = atob(base64Audio);
+                        const bytes = Uint8Array.from(binaryString, c => c.charCodeAt(0));
+                        
+                        // Convert PCM to WAV (Gemini returns Linear16 PCM at 24kHz, mono)
+                        const wavBlob = convertPCMToWAV(bytes, 24000, 1, 16);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+                        return audioUrl;
+                    }
+                }
+            }
+            
+            throw new Error('No audio data in Gemini response');
+        }
+
+        // Generate voice using OpenAI TTS (Priority 2)
+        async function generateVoiceWithOpenAI(text) {
+            if (!isApiKeyConfigured(API_CONFIG.openai.apiKey)) {
+                throw new Error('OpenAI API key not configured');
+            }
+
+            const cleanText = stripEmojis(text);
+
+            const response = await fetch(API_CONFIG.openai.ttsEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${API_CONFIG.openai.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: API_CONFIG.openai.ttsModel,
+                    voice: API_CONFIG.openai.ttsVoice,
+                    input: cleanText
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`OpenAI TTS API error: ${response.status} - ${errorText}`);
+            }
+
+            // OpenAI returns audio directly as a blob
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            return audioUrl;
+        }
+
+        // Generate voice using Murf.ai TTS (Priority 3)
         async function generateVoiceWithMurf(text, language = 'es') {
             if (!isApiKeyConfigured(API_CONFIG.murf.apiKey)) {
                 throw new Error('Murf.ai API key not configured');
@@ -649,17 +800,30 @@
             return data.audioFile; // URL or base64 audio
         }
 
-        // Voice generation with fallback to browser TTS
+        // Main voice generation function with fallback logic
+        // Priority: Gemini → OpenAI → Murf → Browser
         async function generateVoice(text, language = 'es') {
-            try {
-                // Try Murf.ai first
-                const audioUrl = await generateVoiceWithMurf(text, language);
-                return { audioUrl, provider: 'murf' };
-            } catch (error) {
-                console.log('Murf.ai voice failed, falling back to browser TTS:', error.message);
-                // Fallback to browser's built-in speech synthesis
-                return { useBrowserTTS: true, text, language, provider: 'browser' };
+            const providers = [
+                { name: 'Gemini', fn: () => generateVoiceWithGemini(text, language) },
+                { name: 'OpenAI', fn: () => generateVoiceWithOpenAI(text) },
+                { name: 'Murf', fn: () => generateVoiceWithMurf(text, language) }
+            ];
+
+            for (const provider of providers) {
+                try {
+                    console.log(`Trying ${provider.name} TTS...`);
+                    const audioUrl = await provider.fn();
+                    console.log(`${provider.name} TTS succeeded`);
+                    return { audioUrl, provider: provider.name.toLowerCase() };
+                } catch (error) {
+                    console.log(`${provider.name} TTS failed:`, error.message);
+                    // Continue to next provider
+                }
             }
+
+            // All providers failed - fallback to browser TTS
+            console.log('All TTS providers failed, falling back to browser TTS');
+            return { useBrowserTTS: true, text, language, provider: 'browser' };
         }
 
         // Browser TTS fallback function
@@ -702,9 +866,15 @@
                     speakWithBrowserTTS(result.text, result.language);
                     updatePlayerStatus(i18n[state.lang].voiceBasic || 'Basic voice...');
                 } else if (result.audioUrl) {
-                    // Play Murf.ai audio
+                    // Play audio from the successful provider
                     playAudioFromUrl(result.audioUrl);
-                    updatePlayerStatus('Murf.ai');
+                    // Display provider name with proper capitalization
+                    const providerDisplay = {
+                        'gemini': 'Gemini TTS',
+                        'openai': 'OpenAI TTS',
+                        'murf': 'Murf.ai'
+                    };
+                    updatePlayerStatus(providerDisplay[result.provider] || result.provider);
                 }
             } catch (error) {
                 console.log('Voice generation failed completely:', error);
