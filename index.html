@@ -362,6 +362,10 @@
         // ============================================
         // API CONFIGURATION
         // ============================================
+        // NOTE: These API keys are intentionally placed in client-side code as per requirements.
+        // In a production environment, these should be moved to a serverless backend
+        // (e.g., Vercel Functions, AWS Lambda) to prevent exposure and quota abuse.
+        // For production deployment, replace direct API calls with calls to your secure backend.
         const API_CONFIG = {
             openai: {
                 key: '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',
@@ -1121,7 +1125,44 @@
             };
             
             const qList = document.getElementById('lesson-questions-list'); qList.innerHTML = '';
-            if(data.questions) { data.questions.forEach((item, idx) => { const qContainer = document.createElement('div'); qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; let optionsHtml = ''; item.options.forEach((opt, optIdx) => { optionsHtml += `<div class="quiz-option mt-2" onclick="checkLessonAnswer(this, ${optIdx === item.correct}, '${opt.replace(/'/g, "\\'")}')">${opt}</div>`; }); qContainer.innerHTML = `<div class="flex justify-between items-center mb-3"><p class="font-bold text-lg text-slate-800">❓ ${item.q}</p><button class="text-blue-400 hover:text-blue-600 text-xl" onclick="speak('${item.q.replace(/'/g, "\\'")}')">🔊</button></div><div class="mt-2 space-y-2">${optionsHtml}</div>`; qList.appendChild(qContainer); }); }
+            if(data.questions) { 
+                data.questions.forEach((item, idx) => { 
+                    const qContainer = document.createElement('div'); 
+                    qContainer.className = "bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"; 
+                    
+                    // Create question header
+                    const headerDiv = document.createElement('div');
+                    headerDiv.className = "flex justify-between items-center mb-3";
+                    
+                    const questionP = document.createElement('p');
+                    questionP.className = "font-bold text-lg text-slate-800";
+                    questionP.textContent = "❓ " + item.q;
+                    
+                    const speakBtn = document.createElement('button');
+                    speakBtn.className = "text-blue-400 hover:text-blue-600 text-xl";
+                    speakBtn.textContent = "🔊";
+                    speakBtn.onclick = () => speak(item.q);
+                    
+                    headerDiv.appendChild(questionP);
+                    headerDiv.appendChild(speakBtn);
+                    
+                    // Create options container
+                    const optionsDiv = document.createElement('div');
+                    optionsDiv.className = "mt-2 space-y-2";
+                    
+                    item.options.forEach((opt, optIdx) => {
+                        const optDiv = document.createElement('div');
+                        optDiv.className = "quiz-option mt-2";
+                        optDiv.textContent = opt;
+                        optDiv.onclick = function() { checkLessonAnswer(this, optIdx === item.correct, opt); };
+                        optionsDiv.appendChild(optDiv);
+                    });
+                    
+                    qContainer.appendChild(headerDiv);
+                    qContainer.appendChild(optionsDiv);
+                    qList.appendChild(qContainer); 
+                }); 
+            }
             
             // Render related topics
             const subcatList = document.getElementById('subcategories-list');
@@ -1425,13 +1466,17 @@
                     ? 'bg-blue-600 text-white rounded-2xl rounded-br-sm px-4 py-2 max-w-[80%] text-sm'
                     : 'bg-white text-slate-700 rounded-2xl rounded-bl-sm px-4 py-2 max-w-[80%] text-sm shadow-sm border border-slate-100';
                 
-                bubble.innerHTML = text;
+                // Use textContent for user messages to prevent XSS
+                // Use textContent for all messages for safety
+                const textSpan = document.createElement('span');
+                textSpan.textContent = text;
+                bubble.appendChild(textSpan);
                 
                 // Add speak button for assistant messages
                 if (sender === 'assistant') {
                     const speakBtn = document.createElement('button');
                     speakBtn.className = 'ml-2 text-blue-400 hover:text-blue-600 text-sm';
-                    speakBtn.innerHTML = '🔊';
+                    speakBtn.textContent = '🔊';
                     speakBtn.onclick = () => speak(text);
                     bubble.appendChild(speakBtn);
                 }
